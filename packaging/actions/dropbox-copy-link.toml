@@ -1,0 +1,10 @@
+# nautilus-dropbox's "Copy Dropbox Link", via the daemon's command socket.
+# Scoped to the Dropbox folder; hidden entirely when the helper chain is
+# not installed. With several files selected the last link wins the
+# clipboard — same as running the menu item repeatedly.
+name = "Copy Dropbox Link"
+plural = "Copy %n Dropbox Links"
+command = "omanta-dropbox-link copy %f"
+each = true
+requires = ["omanta-dropbox-link", "socat", "wl-copy"]
+under = ["~/Dropbox"]

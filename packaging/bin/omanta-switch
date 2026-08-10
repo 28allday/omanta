@@ -1,0 +1,213 @@
+#!/bin/bash
+
+# omarchy:summary=Switch the default file manager between omanta and Nautilus
+#
+# Flips every per-user integration point that decides "which file manager":
+#
+#   - xdg-mime defaults: inode/directory plus every archive type omanta's
+#     .desktop declares (the same set Nautilus registers)
+#   - the SUPER+SHIFT+F / SUPER+ALT+SHIFT+F bindings, via a managed block
+#     in ~/.config/hypr/bindings.lua (hl.unbind + o.bind, the documented
+#     override pattern — Omarchy's own files are never touched)
+#
+# The org.freedesktop.FileManager1 D-Bus name is claimed at runtime by
+# whichever file manager starts first while the name is free; omanta
+# declines it when Nautilus owns it. Switching therefore also means
+# closing the other file manager's windows — the script says so rather
+# than killing anything.
+#
+# install-menu adds a checkbox row to the Omarchy Toggle menu
+# (SUPER+CTRL+O) via ~/.config/omarchy/extensions/omarchy-menu.jsonc;
+# the shell watches that file, so the row appears without a restart.
+#
+# Everything is reversible: `omanta-switch nautilus` plus `remove-menu`
+# restores the stock Omarchy state exactly.
+
+set -euo pipefail
+
+OMANTA_DESKTOP="omanta.desktop"
+NAUTILUS_DESKTOP="org.gnome.Nautilus.desktop"
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+BINDINGS_FILE="$CONFIG_HOME/hypr/bindings.lua"
+MENU_FILE="$CONFIG_HOME/omarchy/extensions/omarchy-menu.jsonc"
+BLOCK_BEGIN="-- >>> omanta-switch managed block, do not edit by hand"
+BLOCK_END="-- <<< omanta-switch managed block"
+MENU_BEGIN="// >>> omanta-switch managed block, do not edit by hand"
+MENU_END="// <<< omanta-switch managed block"
+
+die() { echo "omanta-switch: $*" >&2; exit 1; }
+
+find_desktop_file() {
+    local dir IFS=:
+    for dir in "${XDG_DATA_HOME:-$HOME/.local/share}" ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do
+        [ -f "$dir/applications/$OMANTA_DESKTOP" ] && { echo "$dir/applications/$OMANTA_DESKTOP"; return; }
+    done
+    die "$OMANTA_DESKTOP not found in any XDG applications directory — is omanta installed?"
+}
+
+mimetypes() {
+    # inode/directory plus the archive types, straight from the installed
+    # .desktop so the two lists can never drift apart.
+    sed -n 's/^MimeType=//p' "$(find_desktop_file)" | tr ';' '\n' | sed '/^$/d'
+}
+
+current_default() { xdg-mime query default inode/directory 2>/dev/null || true; }
+
+apply_defaults() {
+    local desktop="$1" type
+    while IFS= read -r type; do
+        xdg-mime default "$desktop" "$type"
+    done < <(mimetypes)
+}
+
+bindings_block() {
+    cat <<EOF
+$BLOCK_BEGIN
+hl.unbind("SUPER + SHIFT + F")
+hl.unbind("SUPER + ALT + SHIFT + F")
+o.bind("SUPER + SHIFT + F", "File manager", "omanta-launch")
+o.bind("SUPER + ALT + SHIFT + F", "File manager (cwd)", "omanta-launch-cwd")
+$BLOCK_END
+EOF
+}
+
+remove_bindings_block() {
+    [ -f "$BINDINGS_FILE" ] || return 0
+    grep -qF -- "$BLOCK_BEGIN" "$BINDINGS_FILE" || return 0
+    local tmp
+    tmp="$(mktemp)"
+    # Drop the block plus the blank separator added above it, so
+    # add/remove round-trips leave the file byte-identical.
+    awk -v begin="$BLOCK_BEGIN" -v end="$BLOCK_END" '
+        $0 == begin { inblock = 1; blanks = 0; next }
+        inblock { if ($0 == end) inblock = 0; next }
+        /^$/ { blanks++; next }
+        { for (; blanks > 0; blanks--) print ""; print }
+    ' "$BINDINGS_FILE" > "$tmp"
+    mv "$tmp" "$BINDINGS_FILE"
+}
+
+add_bindings_block() {
+    mkdir -p "$(dirname "$BINDINGS_FILE")"
+    touch "$BINDINGS_FILE"
+    remove_bindings_block
+    printf '\n%s\n' "$(bindings_block)" >> "$BINDINGS_FILE"
+}
+
+reload_hyprland() {
+    [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && hyprctl reload >/dev/null 2>&1 || true
+}
+
+menu_entry() {
+    cat <<'EOF'
+  "trigger.toggle.file-manager": {"icon":"󰉋","label":"Omanta File Manager","checked":"xdg-mime query default inode/directory | grep -qx omanta.desktop","action":"omanta-switch toggle"},
+EOF
+}
+
+validate_menu_file() {
+    # Same JSONC dialect the shell's MenuModel.js accepts: whole-line //
+    # comments and trailing commas. A parse failure there silently drops
+    # every user extension, so refuse to leave a broken file behind.
+    perl -0777 -MJSON::PP -e '
+        my $raw = do { local $/; <> };
+        $raw =~ s{^\s*//[^\n]*(\n|$)}{}gm;
+        $raw =~ s{,(\s*[\}\]])}{$1}g;
+        exit 1 unless eval { JSON::PP::decode_json($raw); 1 };
+    ' "$MENU_FILE"
+}
+
+remove_menu_block() {
+    [ -f "$MENU_FILE" ] || return 0
+    sed -i "\#^  $MENU_BEGIN\$#,\#^  $MENU_END\$#d" "$MENU_FILE"
+}
+
+add_menu_block() {
+    mkdir -p "$(dirname "$MENU_FILE")"
+    [ -f "$MENU_FILE" ] || printf '{\n}\n' > "$MENU_FILE"
+    local backup work
+    backup="$(mktemp)"
+    cp "$MENU_FILE" "$backup"
+    remove_menu_block
+    work="$(mktemp)"
+    cp "$MENU_FILE" "$work"
+    # Insert the managed block just before the file's closing brace. The
+    # trailing comma on the entry is safe: the menu parser strips commas
+    # before } or ], so the block works in any position.
+    awk -v begin="  $MENU_BEGIN" -v end="  $MENU_END" -v entry="$(menu_entry)" '
+        { lines[NR] = $0 }
+        /^\}[[:space:]]*$/ { last = NR }
+        END {
+            for (i = 1; i <= NR; i++) {
+                if (i == last) { print begin; print entry; print end }
+                print lines[i]
+            }
+        }
+    ' "$work" > "$MENU_FILE"
+    rm -f "$work"
+    if ! validate_menu_file; then
+        cp "$backup" "$MENU_FILE"
+        rm -f "$backup"
+        die "$MENU_FILE would not parse after the edit — restored the original"
+    fi
+    rm -f "$backup"
+}
+
+switch_to_omanta() {
+    apply_defaults "$OMANTA_DESKTOP"
+    add_bindings_block
+    reload_hyprland
+    echo "Default file manager: omanta"
+    echo "SUPER+SHIFT+F now launches omanta. Close any open Nautilus windows"
+    echo "so omanta can claim org.freedesktop.FileManager1 on its next start."
+}
+
+switch_to_nautilus() {
+    apply_defaults "$NAUTILUS_DESKTOP"
+    remove_bindings_block
+    reload_hyprland
+    echo "Default file manager: Nautilus (stock Omarchy state restored)"
+    echo "Close any open omanta windows so Nautilus can claim"
+    echo "org.freedesktop.FileManager1 on its next start."
+}
+
+status() {
+    local def owner=""
+    def="$(current_default)"
+    echo "inode/directory default : ${def:-unset}"
+    if [ -f "$BINDINGS_FILE" ] && grep -qF -- "$BLOCK_BEGIN" "$BINDINGS_FILE"; then
+        echo "SUPER+SHIFT+F binding   : omanta (managed override present)"
+    else
+        echo "SUPER+SHIFT+F binding   : stock (Nautilus)"
+    fi
+    if [ -f "$MENU_FILE" ] && grep -qF -- "$MENU_BEGIN" "$MENU_FILE"; then
+        echo "Toggle-menu entry       : installed"
+    else
+        echo "Toggle-menu entry       : not installed"
+    fi
+    if command -v gdbus >/dev/null; then
+        owner="$(gdbus call --session --dest org.freedesktop.DBus \
+            --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.GetNameOwner \
+            org.freedesktop.FileManager1 2>/dev/null || true)"
+    fi
+    echo "FileManager1 owned      : $([ -n "$owner" ] && echo yes || echo "no (next file manager to start claims it)")"
+}
+
+case "${1-status}" in
+    omanta)       switch_to_omanta ;;
+    nautilus)     switch_to_nautilus ;;
+    toggle)
+        if [ "$(current_default)" = "$OMANTA_DESKTOP" ]; then
+            switch_to_nautilus
+        else
+            switch_to_omanta
+        fi
+        ;;
+    status)       status ;;
+    install-menu) add_menu_block; echo "Toggle-menu entry installed (SUPER+CTRL+O → Toggle)" ;;
+    remove-menu)  remove_menu_block; echo "Toggle-menu entry removed" ;;
+    *)
+        echo "usage: omanta-switch [omanta|nautilus|toggle|status|install-menu|remove-menu]" >&2
+        exit 2
+        ;;
+esac

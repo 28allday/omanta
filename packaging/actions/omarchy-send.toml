@@ -1,0 +1,7 @@
+# Send the selection with Omarchy-Send, pre-staged on its device list.
+# Files and folders both; omarchy-send expands folders itself.
+name = "Send via Omarchy-Send"
+plural = "Send %n items via Omarchy-Send"
+command = "omarchy-send %F"
+terminal = true
+requires = ["omarchy-send"]

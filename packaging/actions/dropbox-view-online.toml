@@ -1,0 +1,7 @@
+# nautilus-dropbox's "View on Dropbox.com" — the share link, opened in the
+# browser instead of copied.
+name = "View on Dropbox.com"
+command = "omanta-dropbox-link open %f"
+each = true
+requires = ["omanta-dropbox-link", "socat"]
+under = ["~/Dropbox"]

@@ -1,0 +1,22 @@
+#!/bin/sh
+# Ask the local Dropbox daemon for a share link — the same command socket
+# nautilus-dropbox uses. The `dropbox` CLI wrapper is not an option: it
+# blocks indefinitely when the GUI side is unavailable.
+#
+#   omanta-dropbox-link copy <path>   put the link on the clipboard
+#   omanta-dropbox-link open <path>   open the link in the browser
+set -eu
+
+mode="$1"
+path="$2"
+
+link=$(printf 'get_shared_link\npath\t%s\ndone\n' "$path" \
+    | socat -t 10 - "UNIX-CONNECT:$HOME/.dropbox/command_socket" \
+    | awk -F'\t' '/^link/ { print $2; exit }')
+[ -n "$link" ] || exit 1
+
+case "$mode" in
+    copy) printf %s "$link" | wl-copy ;;
+    open) xdg-open "$link" ;;
+    *) exit 2 ;;
+esac

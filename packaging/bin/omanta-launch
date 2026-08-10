@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# omarchy:summary=Launch Files (omanta)
+
+exec setsid uwsm-app -- omanta --new-window

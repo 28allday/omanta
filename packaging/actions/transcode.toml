@@ -1,0 +1,11 @@
+# Omarchy's Transcode, as omarchy-transcode ships it: images and video only,
+# never folders, one floating presentation terminal chaining the files.
+name = "Transcode"
+plural = "Transcode %n items"
+command = "omarchy-transcode %f"
+each = true
+terminal = true
+requires = ["omarchy-transcode"]
+mimetypes = ["image/*", "video/*"]
+extensions = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".avif", ".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi"]
+directories = false

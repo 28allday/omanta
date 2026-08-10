@@ -1,0 +1,7 @@
+# Send the selection with LocalSend, headless. Hidden when the native
+# localsend binary is absent (the old extension's flatpak fallback is not
+# carried over — install the package).
+name = "Send via LocalSend"
+plural = "Send selected via LocalSend"
+command = "localsend --headless send %F"
+requires = ["localsend"]

@@ -1,0 +1,39 @@
+# omanta — native Qt Quick/GIO file manager for Omarchy.
+#
+# Builds from the release tag. For a local test build from your working
+# tree, swap source= for "$pkgname::git+file://<repo-path>" and add back
+#   pkgver() { cd "$pkgname"; printf "0.r%s.%s" \
+#     "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"; }
+#
+# Deliberately NOT shipped here (cutover-only, see NOTES.md):
+#   /usr/share/dbus-1/services/org.freedesktop.FileManager1.service
+# pacman would refuse to install alongside nautilus, which owns it. The
+# runtime claims the name only when free, so both coexist until cutover.
+
+pkgname=omanta
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Native file manager for Omarchy (Qt Quick + GIO)"
+arch=('x86_64')
+url="https://github.com/28allday/omanta"
+license=('MIT')
+depends=('qt6-base' 'qt6-declarative' 'glib2' 'gvfs' 'libarchive' 'tinysparql')
+optdepends=('gvfs-smb: browse smb:// shares'
+            'gvfs-mtp: phones over MTP'
+            'gvfs-gphoto2: cameras'
+            'ffmpegthumbnailer: video thumbnails'
+            'localsearch: full-text search')
+makedepends=('cmake' 'ninja' 'git')
+source=("$pkgname::git+https://github.com/28allday/omanta.git#tag=v$pkgver")
+sha256sums=('SKIP')
+
+build() {
+    cmake -S "$pkgname" -B build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr
+    cmake --build build
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+}
