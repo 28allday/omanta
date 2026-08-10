@@ -63,14 +63,21 @@ omanta-switch toggle     # flip
 omanta-switch status     # what's active right now
 ```
 
-Or from the desktop: `omanta-switch install-menu` once, then the Omarchy
-Toggle menu (`SUPER+CTRL+O`) gains an **Omanta File Manager** checkbox row.
+Or from the desktop: run `omanta-switch install-menu` once and the Omarchy
+Toggle menu (`SUPER+CTRL+O`) gains an **Omanta File Manager** row — select
+it to switch either way. It shows a ✓ while omanta is the default, so the
+menu doubles as a status check. The row appears instantly (no shell
+restart) and `omanta-switch remove-menu` takes it out again.
 
-Switching flips the folder/archive mime defaults and the `SUPER+SHIFT+F`
-binding (via a managed block in `~/.config/hypr/bindings.lua` — Omarchy's
-own files are never modified). Switching back restores everything exactly
-as it was. One note: whichever file manager has windows open keeps the
-"open containing folder" D-Bus service until its last window closes.
+Switching makes omanta (or Nautilus) the default everywhere at once:
+`SUPER+SHIFT+F`, folders opened from other apps, and double-clicked
+archives. It works by flipping the xdg-mime defaults and writing a
+managed, clearly-marked block to `~/.config/hypr/bindings.lua` —
+Omarchy's own files are never modified, no logout needed, and switching
+back restores your configuration byte-for-byte. One note: whichever file
+manager has windows open keeps the "open containing folder" D-Bus
+service until its last window closes, so close the other one's windows
+after switching.
 
 ## Uninstall
 
