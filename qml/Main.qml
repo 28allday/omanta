@@ -894,11 +894,18 @@ Window {
     }
 
     function newFolder() {
+        if (!viewWritable)
+            return;
         newFolderPrompt.initialText = qsTr("New Folder");
         newFolderPrompt.ask();
     }
 
     function renameSelected() {
+        // Recent rows are pointers at files elsewhere; renaming the pointer
+        // is meaningless and renaming the target would strand it. Nautilus
+        // disables rename here too.
+        if (viewingRecent)
+            return;
         const paths = selection();
         if (paths.length === 0)
             return;
@@ -929,6 +936,22 @@ Window {
     // Rows in the trash cannot be trashed again — there, the delete key means
     // what Nautilus makes it mean: permanent delete, behind the confirm.
     readonly property bool viewingTrash: currentTab ? currentTab.path === "trash:///" : false
+
+    // Recent rows resolve to their target files for every operation (the tab
+    // does that in selectedPaths/activate), but the view itself takes no new
+    // files and its rows keep their real names — so rename, paste and New
+    // Folder are off here, as in Nautilus.
+    readonly property bool viewingRecent: currentTab ? currentTab.viewingRecent : false
+
+    // Whether the view is somewhere files can be created: any real directory,
+    // not one of the four virtual roots. Gates New Folder and Paste.
+    readonly property bool viewWritable: {
+        if (!currentTab || currentTab.path === "")
+            return false;
+        const path = currentTab.path;
+        return path !== "trash:///" && path !== "recent:///"
+            && path !== "network:///" && path !== "starred:///";
+    }
 
     // The Network view carries its own chrome: the server bar below the view
     // and Forget Connection in the context menu.
@@ -1038,7 +1061,7 @@ Window {
     }
 
     function paste() {
-        if (!currentTab)
+        if (!currentTab || !viewWritable)
             return;
         startTransfer(Clipboard.paths(), currentTab.path, Clipboard.isCut(), true);
     }
@@ -1477,7 +1500,7 @@ Window {
 
         MenuItem {
             text: qsTr("New Folder…")
-            enabled: root.currentTab !== null
+            enabled: root.currentTab !== null && root.viewWritable
             onTriggered: root.newFolder()
         }
 
@@ -1508,7 +1531,7 @@ Window {
 
         MenuItem {
             text: qsTr("Paste")
-            enabled: Clipboard.hasFiles && root.currentTab !== null
+            enabled: Clipboard.hasFiles && root.currentTab !== null && root.viewWritable
             onTriggered: root.paste()
         }
 
@@ -1562,6 +1585,7 @@ Window {
         // signal a binding could follow — and the user actions depend on
         // what is selected right now.
         property bool folderBookmarked: false
+        property string terminalDir: ""
         property bool selectionStarred: false
         property bool selectionForgettable: false
         property bool selectionExtractable: false
@@ -1573,6 +1597,17 @@ Window {
             folderBookmarked = root.currentTab
                 ? sidebar.isBookmarked(root.currentTab.path) : false;
             actionPaths = root.selection();
+            // Where Open in Terminal lands: one selected local folder is
+            // itself the place; one selected local file means its folder —
+            // which in Recent is the target file's real location, since the
+            // selection resolves to targets there; otherwise the folder
+            // being viewed, when a shell can cd to it.
+            if (actionPaths.length === 1 && Platform.isLocal(actionPaths[0]))
+                terminalDir = Platform.isDir(actionPaths[0])
+                            ? actionPaths[0] : Platform.parentPath(actionPaths[0]);
+            else
+                terminalDir = root.currentTab && Platform.isLocal(root.currentTab.path)
+                            ? root.currentTab.path : "";
             selectionStarred = StarredStore.allStarred(actionPaths);
             selectionForgettable = root.viewingNetwork && ServerStore.allKnown(actionPaths);
             selectionExtractable = root.currentTab && root.currentTab.batchRenamable
@@ -1612,18 +1647,11 @@ Window {
 
         MenuItem {
             text: "Open in Terminal"
-            // A terminal needs a working directory; trash:// has none.
-            enabled: root.currentTab && Platform.isLocal(root.currentTab.path)
-            onTriggered: {
-                if (!root.currentTab)
-                    return;
-                // A selected folder is the more useful target; otherwise the
-                // folder being viewed.
-                const selected = root.currentTab.selectedPaths();
-                const target = selected.length === 1 && Platform.isDir(selected[0])
-                             ? selected[0] : root.currentTab.path;
-                Platform.openTerminal(target);
-            }
+            // A terminal needs a working directory; the sampled terminalDir
+            // is empty when there is nowhere local to land (trash://, an
+            // unresolved remote view).
+            enabled: contextMenu.terminalDir !== ""
+            onTriggered: Platform.openTerminal(contextMenu.terminalDir)
         }
 
         MenuItem {
@@ -1646,11 +1674,12 @@ Window {
             // Nautilus's star toggle: Star when anything in the selection is
             // unstarred, Unstar only when the whole selection is starred.
             text: contextMenu.selectionStarred ? qsTr("Unstar") : qsTr("Star")
-            // Local folders and the Starred view itself (paths there are the
-            // real files); trash rows have nothing to pin.
+            // Local folders, the Starred view itself and Recent (paths in
+            // both resolve to the real files); trash rows have nothing to pin.
             enabled: root.currentTab && root.currentTab.selectionCount > 0
                      && (Platform.isLocal(root.currentTab.path)
-                         || root.currentTab.path === "starred:///")
+                         || root.currentTab.path === "starred:///"
+                         || root.viewingRecent)
             onTriggered: {
                 if (contextMenu.selectionStarred)
                     StarredStore.unstar(contextMenu.actionPaths);
@@ -1675,7 +1704,7 @@ Window {
 
         MenuItem {
             text: qsTr("Paste")
-            enabled: Clipboard.hasFiles
+            enabled: Clipboard.hasFiles && root.viewWritable
             onTriggered: root.paste()
         }
 
@@ -1694,14 +1723,17 @@ Window {
 
         MenuItem {
             text: qsTr("New Folder")
+            enabled: root.viewWritable
             onTriggered: root.newFolder()
         }
 
         MenuItem {
             text: qsTr("Rename…")
             // One item renames inline; several open batch rename, which
-            // needs a real directory under it.
-            enabled: root.currentTab && (root.currentTab.selectionCount === 1
+            // needs a real directory under it. Recent rows are pointers —
+            // nothing there is renamable.
+            enabled: root.currentTab && !root.viewingRecent
+                     && (root.currentTab.selectionCount === 1
                      || (root.currentTab.selectionCount > 1 && root.currentTab.batchRenamable))
             onTriggered: root.renameSelected()
         }

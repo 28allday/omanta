@@ -348,7 +348,9 @@ Item {
                             && !root.tab.isSelected(row.name))
                             root.tab.selectOnly(row.name);
                         const paths = root.tab.isSelected(row.name)
-                                    ? root.tab.selectedPaths() : [row.filePath];
+                                    ? root.tab.selectedPaths()
+                                    : [root.tab.viewingRecent && row.targetPath !== ""
+                                       ? row.targetPath : row.filePath];
                         dragProxy.Drag.mimeData = { "text/uri-list": Platform.uriList(paths) };
                         row.grabToImage(result => dragProxy.Drag.imageSource = result.url);
                     }

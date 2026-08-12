@@ -78,6 +78,12 @@ FocusScope {
 
     readonly property bool viewingStarred: path === "starred:///"
     readonly property bool viewingNetwork: path === "network:///"
+    // Recent rows are pointers: recent:///<id> URIs that no file operation
+    // can act on. Everything that leaves this tab — selection, activation,
+    // drags — resolves them to the target file, as Nautilus does. Trash rows
+    // also carry a target-uri (into Trash/files) but must NOT be resolved:
+    // restore and delete need the trash:// URI.
+    readonly property bool viewingRecent: path === "recent:///"
 
     // Batch rename works on a real directory listing only: search results,
     // starred and network rows come from many places (or aren't files), so
@@ -221,7 +227,7 @@ FocusScope {
     function activate(row) {
         if (row < 0 || row >= files.count)
             return;
-        const target = files.valueAt(row, "filePath");
+        const target = actionPathAt(row);
         if (files.valueAt(row, "isDir")) {
             navigate(target);
         } else if (Platform.activationExtracts(files.valueAt(row, "contentType"))) {
@@ -319,12 +325,23 @@ FocusScope {
         selectedNames = next;
     }
 
+    // The path operations should act on for a row — the target file when
+    // this is the Recent view, the row itself everywhere else.
+    function actionPathAt(row) {
+        if (viewingRecent) {
+            const target = files.valueAt(row, "targetPath");
+            if (target !== "")
+                return target;
+        }
+        return files.valueAt(row, "filePath");
+    }
+
     function selectedPaths() {
         const paths = [];
         for (let row = 0; row < files.count; ++row) {
             const name = files.valueAt(row, "name");
             if (selectedNames[name])
-                paths.push(files.valueAt(row, "filePath"));
+                paths.push(actionPathAt(row));
         }
         return paths;
     }

@@ -11,7 +11,7 @@
 # runtime claims the name only when free, so both coexist until cutover.
 
 pkgname=omanta
-pkgver=0.1.1
+pkgver=0.1.2
 pkgrel=1
 pkgdesc="Native file manager for Omarchy (Qt Quick + GIO)"
 arch=('x86_64')
