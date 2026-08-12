@@ -54,6 +54,11 @@ class Settings : public QObject
     // Nautilus's captions key, whose schema default is no captions at all.
     Q_PROPERTY(QStringList iconCaptions READ iconCaptions WRITE setIconCaptions NOTIFY changed)
 
+    // Not a Nautilus row: the alpha the window's surfaces are painted at,
+    // the way a terminal's background_opacity works — backdrop translucent,
+    // text and controls opaque. 1 = solid, floor 0.5 keeps content readable.
+    Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY changed)
+
 public:
     explicit Settings(QObject *parent = nullptr);
 
@@ -70,6 +75,7 @@ public:
     QStringList listColumnOrder() const;
     QStringList listVisibleColumns() const;
     QStringList iconCaptions() const;
+    qreal backgroundOpacity() const { return realFor("backgroundOpacity", 1.0, 0.5, 1.0); }
 
     // Every column id, canonical order. The QML layer owns labels and widths.
     Q_INVOKABLE static QStringList allListColumns();
@@ -89,6 +95,7 @@ public:
     void setListColumnOrder(const QStringList &value) { set("listColumnOrder", value.join(QLatin1Char(','))); }
     void setListVisibleColumns(const QStringList &value) { set("listVisibleColumns", value.join(QLatin1Char(','))); }
     void setIconCaptions(const QStringList &value) { set("iconCaptions", value.join(QLatin1Char(','))); }
+    void setBackgroundOpacity(qreal value) { set("backgroundOpacity", QString::number(value, 'f', 2)); }
 
 Q_SIGNALS:
     // One signal for the lot: preference flips are rare and every consumer
@@ -105,6 +112,8 @@ private:
     QString choiceFor(const char *key, const QStringList &allowed) const;
     // Comma list from the file, unknown ids and duplicates dropped.
     QStringList columnListFor(const char *key, const QStringList &fallback) const;
+    // A number inside [min, max]; anything else falls back to the default.
+    qreal realFor(const char *key, qreal fallback, qreal min, qreal max) const;
 
     QHash<QString, QString> m_values;
     QFileSystemWatcher *m_watcher = nullptr;

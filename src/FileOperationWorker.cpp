@@ -522,9 +522,9 @@ bool FileOperationWorker::doEmptyTrash(const FileOperationRequest &request,
         return false;
     }
 
-    // The gvfs trash backend does not promise a recursive delete of a trashed
-    // directory in one call, so each top-level entry goes through the same
-    // recursive delete as everything else — Nautilus empties it the same way.
+    // Each top-level entry is a single delete: the gvfs trash backend removes
+    // a trashed directory and its contents in one call, and rejects deletes
+    // any deeper ("Items in the trash may not be modified").
     bool ok = true;
     while (GFileInfo *info = g_file_enumerator_next_file(entries, m_cancellable, nullptr)) {
         GFile *child = g_file_get_child(trash, g_file_info_get_name(info));
@@ -548,7 +548,10 @@ bool FileOperationWorker::deleteRecursively(GFile *file, QString *error)
         return false;
     }
 
-    if (isDirectory(file)) {
+    // The gvfs trash backend deletes a top-level item and everything under it
+    // in one call, and refuses any delete deeper inside trash:// ("Items in
+    // the trash may not be modified") — so trash items must not be recursed.
+    if (!g_file_has_uri_scheme(file, "trash") && isDirectory(file)) {
         GError *gerror = nullptr;
         GFileEnumerator *children = g_file_enumerate_children(
             file, G_FILE_ATTRIBUTE_STANDARD_NAME, G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,

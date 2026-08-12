@@ -58,6 +58,7 @@ Dialog {
         captionFirst.currentIndex = captionIndex(captions[0]);
         captionSecond.currentIndex = captionIndex(captions[1]);
         captionThird.currentIndex = captionIndex(captions[2]);
+        opacitySlider.value = Settings.backgroundOpacity;
     }
 
     // Caption combos share one value/label order; "none" leads as default.
@@ -312,6 +313,30 @@ Dialog {
                             font.pixelSize: 11
                         }
                     }
+                }
+            }
+
+            SectionTitle { text: qsTr("Appearance") }
+            SectionCaption {
+                text: qsTr("Window background translucency, like a terminal's background opacity. Text and icons stay solid.")
+            }
+
+            PrefRow {
+                label: qsTr("Background Opacity")
+
+                Text {
+                    text: Math.round(opacitySlider.value * 100) + "%"
+                    color: Colors.textDim
+                    font.pixelSize: 12
+                }
+
+                Slider {
+                    id: opacitySlider
+                    from: 0.5
+                    to: 1.0
+                    stepSize: 0.01
+                    implicitWidth: 170
+                    onMoved: Settings.backgroundOpacity = value
                 }
             }
 

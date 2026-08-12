@@ -110,7 +110,11 @@ Window {
     minimumWidth: 640
     minimumHeight: 400
     visible: true
-    color: Colors.window
+    // Transparent, not Colors.window: each region (toolbar, tab strip,
+    // sidebar, content pane, server bar) paints its surface exactly once —
+    // a translucent base under translucent chrome would stack the
+    // backgroundOpacity alpha twice in the chrome areas.
+    color: "transparent"
     title: currentTab ? currentTab.title + " — Files" : "Files"
 
     // Quick Controls (menus, dialogs, fields, scrollbars) paint from the
@@ -615,32 +619,43 @@ Window {
                 onEmptyTrashRequested: emptyTrashConfirm.open()
             }
 
-            StackLayout {
-                id: stack
-
+            Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                currentIndex: 0
 
-                onCurrentIndexChanged: {
-                    if (root.currentTab)
-                        root.currentTab.forceActiveFocus();
+                // The file views' backdrop — the window tone that used to be
+                // the root window colour before the root went transparent.
+                Rectangle {
+                    anchors.fill: parent
+                    color: Colors.window
                 }
 
-                Repeater {
-                    id: tabsRepeater
-                    model: tabModel
+                StackLayout {
+                    id: stack
 
-                    delegate: TabPanes {
-                        required property string tabPath
-                        required property string tabSelection
+                    anchors.fill: parent
+                    currentIndex: 0
 
-                        initialPath: tabPath
-                        initialSelection: tabSelection
-                        onContextMenuRequested: contextMenu.popup()
-                        onMountNeeded: location => windowMounter.mountLocation(location)
-                        onTransferRequested: (sources, destination, isMove) =>
-                            root.startTransfer(sources, destination, isMove, false)
+                    onCurrentIndexChanged: {
+                        if (root.currentTab)
+                            root.currentTab.forceActiveFocus();
+                    }
+
+                    Repeater {
+                        id: tabsRepeater
+                        model: tabModel
+
+                        delegate: TabPanes {
+                            required property string tabPath
+                            required property string tabSelection
+
+                            initialPath: tabPath
+                            initialSelection: tabSelection
+                            onContextMenuRequested: contextMenu.popup()
+                            onMountNeeded: location => windowMounter.mountLocation(location)
+                            onTransferRequested: (sources, destination, isMove) =>
+                                root.startTransfer(sources, destination, isMove, false)
+                        }
                     }
                 }
             }

@@ -20,6 +20,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickWindow>
 #include <QUrl>
 
 #include <cstdio>
@@ -68,12 +69,17 @@ bool forwardToRunningInstance(const QStringList &paths, bool newWindow, const QS
 
 int main(int argc, char *argv[])
 {
+    // Without an alpha channel in the surface format, a window colour with
+    // alpha < 1 (the backgroundOpacity setting) renders on black instead of
+    // showing through. Must be set before any QQuickWindow exists.
+    QQuickWindow::setDefaultAlphaBuffer(true);
+
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omanta"));
     app.setApplicationDisplayName(QStringLiteral("Files"));
     app.setOrganizationDomain(QStringLiteral("omarchy.org"));
     app.setDesktopFileName(QStringLiteral("omanta"));
-    app.setApplicationVersion(QStringLiteral("0.1.0"));
+    app.setApplicationVersion(QStringLiteral("0.1.1"));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Browse files."));

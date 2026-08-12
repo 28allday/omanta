@@ -102,6 +102,15 @@ QString Settings::choiceFor(const char *key, const QStringList &allowed) const
     return allowed.first();
 }
 
+qreal Settings::realFor(const char *key, qreal fallback, qreal min, qreal max) const
+{
+    bool ok = false;
+    const qreal value = m_values.value(QLatin1String(key)).toDouble(&ok);
+    if (!ok || value < min || value > max)
+        return fallback;
+    return value;
+}
+
 QStringList Settings::allListColumns()
 {
     // Canonical order, Nautilus's default-column-order pared to the columns

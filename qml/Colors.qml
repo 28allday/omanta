@@ -12,8 +12,12 @@ QtObject {
     readonly property bool dark: Theme.darkMode
     readonly property bool themed: Theme.hasThemeColors
 
-    readonly property color window: themed ? Theme.windowColor : (dark ? "#101010" : "#fbfbfb")
-    readonly property color chrome: themed ? Theme.chromeColor : (dark ? "#161616" : "#f0f0f0")
+    // The two big surfaces carry the background-opacity preference, the way a
+    // terminal's background_opacity works: the backdrop goes translucent while
+    // text, icons and controls stay fully opaque.
+    readonly property real surfaceAlpha: Settings.backgroundOpacity
+    readonly property color window: Qt.alpha(themed ? Theme.windowColor : (dark ? "#101010" : "#fbfbfb"), surfaceAlpha)
+    readonly property color chrome: Qt.alpha(themed ? Theme.chromeColor : (dark ? "#161616" : "#f0f0f0"), surfaceAlpha)
     readonly property color border: themed ? Theme.borderColor : (dark ? "#2a2a2a" : "#dcdcdc")
 
     readonly property color text: themed ? Theme.textColor : (dark ? "#eeeeee" : "#1c1c1c")
