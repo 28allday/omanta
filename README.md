@@ -40,8 +40,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.0/omanta-0.1.0-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.0-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.1/omanta-0.1.1-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.1-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —
