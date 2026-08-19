@@ -11,13 +11,15 @@
 # runtime claims the name only when free, so both coexist until cutover.
 
 pkgname=omanta
-pkgver=0.1.2
+pkgver=0.1.3
 pkgrel=1
 pkgdesc="Native file manager for Omarchy (Qt Quick + GIO)"
 arch=('x86_64')
 url="https://github.com/28allday/omanta"
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'glib2' 'gvfs' 'libarchive' 'tinysparql')
+install="$pkgname.install"
+depends=('qt6-base' 'qt6-declarative' 'glib2' 'gvfs' 'hicolor-icon-theme'
+         'libarchive' 'tinysparql')
 optdepends=('gvfs-smb: browse smb:// shares'
             'gvfs-mtp: phones over MTP'
             'gvfs-gphoto2: cameras'

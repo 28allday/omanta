@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(omanta VERSION 0.1.2 LANGUAGES CXX)
+project(omanta VERSION 0.1.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -132,6 +132,7 @@ if(OMANTA_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.t
 endif()
 
 install(TARGETS omanta RUNTIME DESTINATION bin)
+install(FILES LICENSE DESTINATION share/licenses/omanta)
 install(FILES packaging/omanta.desktop DESTINATION share/applications)
 install(FILES packaging/omanta.svg DESTINATION share/icons/hicolor/scalable/apps)
 install(DIRECTORY packaging/actions/ DESTINATION share/omanta/actions FILES_MATCHING PATTERN "*.toml")
