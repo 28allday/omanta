@@ -162,6 +162,7 @@ Item {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     text: cell.displayName
@@ -176,6 +177,7 @@ Item {
                     model: root.captions
 
                     Text {
+                        textFormat: Text.PlainText
                         required property string modelData
 
                         width: parent.width

@@ -100,6 +100,7 @@ Item {
                             spacing: 4
 
                             Text {
+                                textFormat: Text.PlainText
                                 text: meta.label
                                 color: root.tab.sortKey === meta.sortKey ? Colors.text : Colors.textDim
                                 font.pixelSize: 12
@@ -107,6 +108,7 @@ Item {
                             }
 
                             Text {
+                                textFormat: Text.PlainText
                                 visible: root.tab.sortKey === meta.sortKey
                                 text: root.tab.sortDescending ? "▾" : "▴"
                                 color: Colors.accent
@@ -222,6 +224,7 @@ Item {
                                 height: Colors.rowHeight
 
                                 Text {
+                                    textFormat: Text.PlainText
                                     visible: row.isDir
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
@@ -262,6 +265,7 @@ Item {
                             }
 
                             Text {
+                                textFormat: Text.PlainText
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: row.displayName
                                 color: root.tab.isSelected(row.name) ? Colors.selectionText : Colors.text
@@ -278,6 +282,7 @@ Item {
                         model: root.listColumns.slice(1) // name renders above
 
                         Text {
+                            textFormat: Text.PlainText
                             required property string modelData
 
                             width: root.columnMeta[modelData].width

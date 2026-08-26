@@ -24,6 +24,7 @@ Dialog {
         }
 
         Text {
+            textFormat: Text.PlainText
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("Files")
             color: Colors.text
@@ -32,6 +33,7 @@ Dialog {
         }
 
         Text {
+            textFormat: Text.PlainText
             anchors.horizontalCenter: parent.horizontalCenter
             text: "omanta " + Qt.application.version
             color: Colors.textDim
@@ -39,6 +41,7 @@ Dialog {
         }
 
         Text {
+            textFormat: Text.PlainText
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("A native file manager for Omarchy.")
             color: Colors.textDim

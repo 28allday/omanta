@@ -46,6 +46,7 @@ Dialog {
         spacing: 8
 
         Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: root.conflicting.length === 1
                   ? qsTr("“%1” already exists here.").arg(root.conflicting[0])
@@ -56,6 +57,7 @@ Dialog {
         }
 
         Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: root.conflicting.length > 1
             text: root.conflicting.slice(0, 6).join(", ")
@@ -66,6 +68,7 @@ Dialog {
         }
 
         Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: qsTr("Replacing cannot be undone.")
             color: Colors.textDim

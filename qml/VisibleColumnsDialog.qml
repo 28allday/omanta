@@ -90,6 +90,7 @@ Dialog {
                         }
 
                         Text {
+                            textFormat: Text.PlainText
                             Layout.fillWidth: true
                             text: root.columnLabels[row.columnId] ?? row.columnId
                             color: row.locked ? Colors.textDim : Colors.text

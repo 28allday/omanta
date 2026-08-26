@@ -586,6 +586,7 @@ FocusScope {
         }
 
         Text {
+            textFormat: Text.PlainText
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("No Known Connections")
             color: Colors.text
@@ -594,6 +595,7 @@ FocusScope {
         }
 
         Text {
+            textFormat: Text.PlainText
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("Enter an address to connect to a network location.")
             color: Colors.textDim

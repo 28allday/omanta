@@ -90,6 +90,7 @@ Dialog {
         spacing: 12
 
         Text {
+            textFormat: Text.PlainText
             text: qsTr("Compress Files and Folders")
             color: Colors.text
             font.pixelSize: 15
@@ -101,6 +102,7 @@ Dialog {
             spacing: 4
 
             Text {
+                textFormat: Text.PlainText
                 text: qsTr("Archive Name")
                 color: Colors.textDim
                 font.pixelSize: 12
@@ -120,6 +122,7 @@ Dialog {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     id: extensionLabel
                     text: root.formats[root.formatIndex].extension
                     color: Colors.textDim
@@ -134,6 +137,7 @@ Dialog {
             spacing: 2
 
             Text {
+                textFormat: Text.PlainText
                 text: qsTr("Compression Method")
                 color: Colors.textDim
                 font.pixelSize: 12
@@ -154,6 +158,7 @@ Dialog {
             }
 
             Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: root.formats[root.formatIndex].note
                 color: Colors.textDim
@@ -168,6 +173,7 @@ Dialog {
             visible: root.wantsPassword
 
             Text {
+                textFormat: Text.PlainText
                 text: qsTr("Password")
                 color: Colors.textDim
                 font.pixelSize: 12
@@ -184,6 +190,7 @@ Dialog {
         }
 
         Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: root.problem !== ""
             text: root.problem

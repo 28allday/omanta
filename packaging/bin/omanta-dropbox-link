@@ -10,6 +10,13 @@ set -eu
 mode="$1"
 path="$2"
 
+# The socket protocol is newline-delimited, and a file name may contain a
+# newline — which would let a crafted name append commands of its own and ask
+# the daemon for a link to something the user never selected.
+case "$path" in
+    *"$(printf '\n')"*) echo "omanta-dropbox-link: refusing a path containing a newline" >&2; exit 2 ;;
+esac
+
 link=$(printf 'get_shared_link\npath\t%s\ndone\n' "$path" \
     | socat -t 10 - "UNIX-CONNECT:$HOME/.dropbox/command_socket" \
     | awk -F'\t' '/^link/ { print $2; exit }')

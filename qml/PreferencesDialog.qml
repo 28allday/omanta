@@ -30,6 +30,7 @@ Dialog {
 
     header: Label {
         text: root.title
+        textFormat: Text.PlainText
         color: Colors.text
         font.pixelSize: 16
         font.bold: true
@@ -107,6 +108,7 @@ Dialog {
             spacing: 8
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: label
                 color: Colors.text
@@ -118,6 +120,7 @@ Dialog {
 
     component SectionTitle: Text {
         width: parent.width
+        textFormat: Text.PlainText
         color: Colors.text
         font.pixelSize: 14
         font.bold: true
@@ -126,6 +129,7 @@ Dialog {
 
     component SectionCaption: Text {
         width: parent.width
+        textFormat: Text.PlainText
         color: Colors.textDim
         font.pixelSize: 12
         wrapMode: Text.WordWrap
@@ -287,6 +291,7 @@ Dialog {
                         onToggled: if (checked) Settings.dateTimeFormat = "simple"
 
                         Text {
+                            textFormat: Text.PlainText
                             id: dateSimpleExample
                             x: parent.indicator.width + parent.spacing + 6
                             y: parent.height - height - 4
@@ -305,6 +310,7 @@ Dialog {
                         onToggled: if (checked) Settings.dateTimeFormat = "detailed"
 
                         Text {
+                            textFormat: Text.PlainText
                             id: dateDetailedExample
                             x: parent.indicator.width + parent.spacing + 6
                             y: parent.height - height - 4
@@ -325,6 +331,7 @@ Dialog {
                 label: qsTr("Background Opacity")
 
                 Text {
+                    textFormat: Text.PlainText
                     text: Math.round(opacitySlider.value * 100) + "%"
                     color: Colors.textDim
                     font.pixelSize: 12

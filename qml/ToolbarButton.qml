@@ -34,6 +34,7 @@ Item {
     }
 
     Text {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         visible: root.glyph === ""
         text: root.symbol

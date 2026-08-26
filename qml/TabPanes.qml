@@ -70,6 +70,7 @@ FocusScope {
                 color: Colors.chrome
 
                 Text {
+                    textFormat: Text.PlainText
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.leftMargin: 10

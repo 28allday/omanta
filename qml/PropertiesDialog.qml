@@ -118,6 +118,7 @@ Dialog {
                 spacing: 2
 
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: properties.itemCount === 1
                           ? properties.displayName
@@ -129,6 +130,7 @@ Dialog {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: properties.itemCount === 1 ? properties.typeDescription : ""
                     visible: text !== ""
@@ -140,6 +142,7 @@ Dialog {
         }
 
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             visible: properties.errorMessage !== ""
             text: properties.errorMessage
@@ -291,10 +294,11 @@ Dialog {
                     columnSpacing: 20
                     rowSpacing: 4
 
-                    Text { text: ""; Layout.preferredWidth: 70 }
-                    Text { text: qsTr("Read"); color: Colors.textDim; font.pixelSize: 12 }
-                    Text { text: qsTr("Write"); color: Colors.textDim; font.pixelSize: 12 }
+                    Text { textFormat: Text.PlainText; text: ""; Layout.preferredWidth: 70 }
+                    Text { textFormat: Text.PlainText; text: qsTr("Read"); color: Colors.textDim; font.pixelSize: 12 }
+                    Text { textFormat: Text.PlainText; text: qsTr("Write"); color: Colors.textDim; font.pixelSize: 12 }
                     Text {
+                        textFormat: Text.PlainText
                         text: properties.isDir ? qsTr("Enter") : qsTr("Execute")
                         color: Colors.textDim
                         font.pixelSize: 12
@@ -303,17 +307,17 @@ Dialog {
                     // Written out rather than generated: a Repeater cannot emit
                     // four grid cells per model row without a wrapper Item,
                     // and the wrapper is what breaks the column alignment.
-                    Text { text: qsTr("Owner"); color: Colors.text; font.pixelSize: 12 }
+                    Text { textFormat: Text.PlainText; text: qsTr("Owner"); color: Colors.text; font.pixelSize: 12 }
                     PermissionBox { bit: 0o400 }
                     PermissionBox { bit: 0o200 }
                     PermissionBox { bit: 0o100 }
 
-                    Text { text: qsTr("Group"); color: Colors.text; font.pixelSize: 12 }
+                    Text { textFormat: Text.PlainText; text: qsTr("Group"); color: Colors.text; font.pixelSize: 12 }
                     PermissionBox { bit: 0o040 }
                     PermissionBox { bit: 0o020 }
                     PermissionBox { bit: 0o010 }
 
-                    Text { text: qsTr("Others"); color: Colors.text; font.pixelSize: 12 }
+                    Text { textFormat: Text.PlainText; text: qsTr("Others"); color: Colors.text; font.pixelSize: 12 }
                     PermissionBox { bit: 0o004 }
                     PermissionBox { bit: 0o002 }
                     PermissionBox { bit: 0o001 }
@@ -324,6 +328,7 @@ Dialog {
                     spacing: 10
 
                     Text {
+                        textFormat: Text.PlainText
                         text: qsTr("On disk: %1  %2").arg(properties.modeText)
                                                      .arg(properties.modeOctal)
                         color: Colors.textDim
@@ -342,6 +347,7 @@ Dialog {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     visible: !properties.canChangeMode && properties.itemCount === 1
                     text: qsTr("Only the owner of a file can change its permissions.")
@@ -394,6 +400,7 @@ Dialog {
                             }
 
                             Text {
+                                textFormat: Text.PlainText
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: modelData.name
                                       + (modelData.isDefault ? " — " + qsTr("default") : "")
@@ -414,6 +421,7 @@ Dialog {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     visible: applicationList.count === 0
                     text: qsTr("No application is registered for this type.")
@@ -466,6 +474,7 @@ Dialog {
         spacing: 10
 
         Text {
+            textFormat: Text.PlainText
             Layout.preferredWidth: 100
             Layout.alignment: Qt.AlignTop
             topPadding: 3
@@ -476,6 +485,7 @@ Dialog {
         }
 
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             topPadding: 3
             bottomPadding: 3

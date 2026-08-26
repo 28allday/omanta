@@ -62,6 +62,7 @@ Dialog {
                     spacing: 2
 
                     Text {
+                        textFormat: Text.PlainText
                         text: modelData.name
                         color: Colors.text
                         font.pixelSize: 14
@@ -79,6 +80,7 @@ Dialog {
                             spacing: 10
 
                             Text {
+                                textFormat: Text.PlainText
                                 width: 220
                                 text: modelData[0]
                                 color: Colors.accent
@@ -87,6 +89,7 @@ Dialog {
                             }
 
                             Text {
+                                textFormat: Text.PlainText
                                 text: modelData[1]
                                 color: Colors.textDim
                                 font.pixelSize: 12

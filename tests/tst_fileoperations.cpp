@@ -49,6 +49,9 @@ private Q_SLOTS:
     void refusesToCopyAFolderIntoItself();
     void deletePermanentlyLeavesNoUndo();
     void deleteRemovesATreeEntirely();
+    void deleteDoesNotFollowSymlinksOutOfTheTree();
+    void copyPreservesSymlinksRatherThanDereferencingThem();
+    void copySurvivesASymlinkLoop();
 
     void reportsErrorsWithoutRecordingUndo();
 
@@ -568,6 +571,56 @@ void TestFileOperations::deleteRemovesATreeEntirely()
 
     QVERIFY(!QFileInfo::exists(tree.filePath("doomed")));
     QVERIFY(QFileInfo::exists(tree.filePath("survivor.txt")));
+}
+
+// A symlink inside a deleted folder must cost the link, never what it points
+// at. Anything else deletes data the user never selected.
+void TestFileOperations::deleteDoesNotFollowSymlinksOutOfTheTree()
+{
+    TempTree tree;
+    tree.writeFile("outside/precious.txt");
+    tree.makeDir("doomed");
+    QVERIFY(QFile::link(tree.filePath("outside"), tree.filePath("doomed/link")));
+    FileOperations ops;
+
+    ops.deletePermanently({ tree.filePath("doomed") });
+    QVERIFY(settle(ops));
+
+    QVERIFY(!QFileInfo::exists(tree.filePath("doomed")));
+    QVERIFY(QFileInfo::exists(tree.filePath("outside")));
+    QVERIFY(QFileInfo::exists(tree.filePath("outside/precious.txt")));
+}
+
+// Copying a folder must copy its symlinks as symlinks. Dereferencing them
+// silently inflates the copy and detaches it from what the user linked.
+void TestFileOperations::copyPreservesSymlinksRatherThanDereferencingThem()
+{
+    TempTree tree;
+    tree.writeFile("elsewhere/big.bin", 4096);
+    tree.makeDir("source");
+    QVERIFY(QFile::link(tree.filePath("elsewhere"), tree.filePath("source/link")));
+    tree.makeDir("target");
+    FileOperations ops;
+
+    ops.copy({ tree.filePath("source") }, tree.filePath("target"));
+    QVERIFY(settle(ops));
+
+    const QFileInfo copied(tree.filePath("target/source/link"));
+    QVERIFY(copied.exists() || copied.isSymLink());
+    QVERIFY2(copied.isSymLink(), "the symlink was dereferenced into a real directory");
+}
+
+// A folder that links to itself must not be walked forever.
+void TestFileOperations::copySurvivesASymlinkLoop()
+{
+    TempTree tree;
+    tree.writeFile("source/a.txt");
+    QVERIFY(QFile::link(tree.filePath("source"), tree.filePath("source/loop")));
+    tree.makeDir("target");
+    FileOperations ops;
+
+    ops.copy({ tree.filePath("source") }, tree.filePath("target"));
+    QVERIFY(settle(ops, 15000));
 }
 
 void TestFileOperations::reportsErrorsWithoutRecordingUndo()

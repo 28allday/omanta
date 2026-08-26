@@ -29,9 +29,13 @@ bool exists(GFile *file)
     return g_file_query_exists(file, nullptr);
 }
 
+// NOFOLLOW_SYMLINKS, and it matters: a link to a folder is a *link*, one item
+// to copy or delete. Following it here walks somebody else's tree — deleting a
+// folder would take the contents of everything it linked to with it.
 bool isDirectory(GFile *file)
 {
-    return g_file_query_file_type(file, G_FILE_QUERY_INFO_NONE, nullptr) == G_FILE_TYPE_DIRECTORY;
+    return g_file_query_file_type(file, G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS, nullptr)
+        == G_FILE_TYPE_DIRECTORY;
 }
 
 QString pathOf(GFile *file)
@@ -776,8 +780,10 @@ bool FileOperationWorker::doTransfer(const FileOperationRequest &request, bool r
         // into copy-then-delete.
         if (removeSources) {
             GError *gerror = nullptr;
-            const GFileCopyFlags flags = request.policy == ConflictPolicy::Replace
-                ? G_FILE_COPY_OVERWRITE : G_FILE_COPY_NONE;
+            const GFileCopyFlags flags = GFileCopyFlags(
+                G_FILE_COPY_NOFOLLOW_SYMLINKS
+                | (request.policy == ConflictPolicy::Replace ? G_FILE_COPY_OVERWRITE
+                                                             : G_FILE_COPY_NONE));
 
             if (g_file_move(source, destination, flags, m_cancellable, nullptr, nullptr, &gerror)) {
                 result.sources << path;
@@ -871,9 +877,12 @@ bool FileOperationWorker::doTransfer(const FileOperationRequest &request, bool r
         }
 
         ProgressContext ctx{ this, id, done, totalBytes, currentName, &throttle };
-        const GFileCopyFlags flags = request.policy == ConflictPolicy::Replace
-            ? GFileCopyFlags(G_FILE_COPY_OVERWRITE | G_FILE_COPY_ALL_METADATA)
-            : G_FILE_COPY_ALL_METADATA;
+        // NOFOLLOW_SYMLINKS: a symlink is copied as a symlink. Without it GIO
+        // dereferences, so copying a folder silently replaces its links with
+        // real copies of whatever they pointed at.
+        const GFileCopyFlags flags = GFileCopyFlags(
+            G_FILE_COPY_ALL_METADATA | G_FILE_COPY_NOFOLLOW_SYMLINKS
+            | (request.policy == ConflictPolicy::Replace ? G_FILE_COPY_OVERWRITE : 0));
 
         if (!g_file_copy(item.source, item.destination, flags, m_cancellable,
                          onCopyProgress, &ctx, &gerror)) {

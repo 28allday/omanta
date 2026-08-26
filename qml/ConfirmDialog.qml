@@ -33,6 +33,7 @@ Dialog {
         spacing: 8
 
         Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: root.message
             color: Colors.text
@@ -41,6 +42,7 @@ Dialog {
         }
 
         Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: root.detail !== ""
             text: root.detail

@@ -145,6 +145,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 anchors.left: icon.right
                 anchors.leftMargin: 8
                 anchors.right: ejectButton.visible ? ejectButton.left : parent.right
@@ -157,6 +158,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 id: ejectButton
 
                 anchors.right: parent.right
@@ -289,6 +291,7 @@ Rectangle {
                 spacing: 8
                 OpsPie { fraction: 1; done: true }
                 Text {
+                    textFormat: Text.PlainText
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("Operations complete")
                     color: Colors.textDim
@@ -311,6 +314,7 @@ Rectangle {
                     }
 
                     Text {
+                        textFormat: Text.PlainText
                         anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - 22
                         text: modelData.shortStatus
@@ -362,6 +366,7 @@ Rectangle {
                 spacing: 12
 
                 Text {
+                    textFormat: Text.PlainText
                     visible: FileOperations.operations.length === 0
                     text: qsTr("All operations complete")
                     color: Colors.textDim
@@ -382,6 +387,7 @@ Rectangle {
                             spacing: 6
 
                             Text {
+                                textFormat: Text.PlainText
                                 width: parent.width - 22
                                 text: modelData.state === "queued"
                                       ? modelData.label + qsTr(" — waiting")
@@ -394,6 +400,7 @@ Rectangle {
                             // Per-operation cancel: interrupts the
                             // running one, drops a queued one.
                             Text {
+                                textFormat: Text.PlainText
                                 text: "✕"
                                 color: cancelOneMouse.containsMouse
                                        ? Colors.text : Colors.textDim
@@ -428,6 +435,7 @@ Rectangle {
                         // The current file on its own line — a long name must
                         // not elide the numbers off the line below it.
                         Text {
+                            textFormat: Text.PlainText
                             visible: (modelData.detail || "") !== ""
                             width: parent.width
                             text: modelData.detail || ""
@@ -438,6 +446,7 @@ Rectangle {
 
                         // Nautilus's details line: bytes, rate, time.
                         Text {
+                            textFormat: Text.PlainText
                             readonly property string line: {
                                 const bits = [];
                                 if (modelData.transferred) bits.push(modelData.transferred);

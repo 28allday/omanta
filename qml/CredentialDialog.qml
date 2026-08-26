@@ -47,6 +47,7 @@ Dialog {
         spacing: 10
 
         Text {
+            textFormat: Text.PlainText
             id: messageText
 
             width: parent.width

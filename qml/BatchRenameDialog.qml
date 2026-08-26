@@ -60,6 +60,7 @@ Dialog {
         spacing: 12
 
         Text {
+            textFormat: Text.PlainText
             text: qsTr("Rename %1 Files").arg(root.count)
             color: Colors.text
             font.pixelSize: 15
@@ -146,6 +147,7 @@ Dialog {
                 visible: renamer.hasNumbering
 
                 Text {
+                    textFormat: Text.PlainText
                     text: qsTr("Automatic Numbering Order")
                     color: Colors.textDim
                     font.pixelSize: 12
@@ -192,6 +194,7 @@ Dialog {
             verticalItemAlignment: Grid.AlignVCenter
 
             Text {
+                textFormat: Text.PlainText
                 text: qsTr("Existing Text")
                 color: Colors.textDim
                 font.pixelSize: 12
@@ -206,6 +209,7 @@ Dialog {
             }
 
             Text {
+                textFormat: Text.PlainText
                 text: qsTr("Replace With")
                 color: Colors.textDim
                 font.pixelSize: 12
@@ -245,6 +249,7 @@ Dialog {
                     spacing: 8
 
                     Text {
+                        textFormat: Text.PlainText
                         width: (parent.width - 40) / 2
                         text: parent.modelData.oldName
                         color: Colors.textDim
@@ -253,12 +258,14 @@ Dialog {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
+                        textFormat: Text.PlainText
                         text: "→"
                         color: Colors.textDim
                         font.pixelSize: 12
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
+                        textFormat: Text.PlainText
                         width: (parent.width - 40) / 2
                         text: parent.modelData.newName
                         color: parent.modelData.conflict ? Colors.error : Colors.text
@@ -271,6 +278,7 @@ Dialog {
         }
 
         Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: renamer.problem !== ""
             text: renamer.problem

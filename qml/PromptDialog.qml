@@ -42,6 +42,7 @@ Dialog {
         spacing: 10
 
         Text {
+            textFormat: Text.PlainText
             text: root.prompt
             color: Colors.text
             font.pixelSize: 13

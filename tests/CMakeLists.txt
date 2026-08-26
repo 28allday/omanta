@@ -46,6 +46,11 @@ omanta_test(tst_fileoperations
     ${CMAKE_SOURCE_DIR}/src/ArchiveEngine.cpp
 )
 
+# Source-tree scan, not a running window: the rule it enforces is a property
+# of the QML text, and a headless suite can check it in milliseconds.
+omanta_test(tst_qmltext)
+target_compile_definitions(tst_qmltext PRIVATE OMANTA_QML_DIR="${CMAKE_SOURCE_DIR}/qml")
+
 omanta_test(tst_thumbnails
     ${CMAKE_SOURCE_DIR}/src/ThumbnailProvider.cpp
 )

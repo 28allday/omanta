@@ -94,6 +94,7 @@ FocusScope {
                     height: crumbRow.height
 
                     Text {
+                        textFormat: Text.PlainText
                         anchors.verticalCenter: parent.verticalCenter
                         visible: index > 0
                         text: "/"
@@ -111,6 +112,7 @@ FocusScope {
                         color: crumbMouse.containsMouse ? Colors.hover : "transparent"
 
                         Text {
+                            textFormat: Text.PlainText
                             id: crumbLabel
                             anchors.centerIn: parent
                             text: modelData.label
@@ -147,6 +149,7 @@ FocusScope {
         color: kebabMouse.containsMouse ? Colors.hover : "transparent"
 
         Text {
+            textFormat: Text.PlainText
             anchors.centerIn: parent
             text: "\u22ee"
             color: Colors.text

@@ -80,6 +80,7 @@ Dialog {
         spacing: 8
 
         Text {
+            textFormat: Text.PlainText
             visible: root.prompt !== ""
             width: parent.width
             text: root.prompt
@@ -99,6 +100,7 @@ Dialog {
             }
 
             Text {
+                textFormat: Text.PlainText
                 width: parent.width - 40
                 anchors.verticalCenter: parent.verticalCenter
                 text: picker.path
@@ -137,6 +139,7 @@ Dialog {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     visible: list.count === 0 && !picker.loading
                     anchors.centerIn: parent
                     text: qsTr("No folders here")
@@ -165,6 +168,7 @@ Dialog {
                     }
 
                     Text {
+                        textFormat: Text.PlainText
                         anchors.left: rowIcon.right
                         anchors.leftMargin: 8
                         anchors.right: parent.right

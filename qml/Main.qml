@@ -211,6 +211,7 @@ Window {
                     }
 
                     Text {
+                        textFormat: Text.PlainText
                         visible: root.sidebarVisible
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignHCenter
@@ -280,6 +281,7 @@ Window {
                         spacing: 6
 
                         Text {
+                            textFormat: Text.PlainText
                             text: "⌕"
                             color: Colors.textDim
                             font.pixelSize: 15
@@ -308,6 +310,7 @@ Window {
                         }
 
                         Text {
+                            textFormat: Text.PlainText
                             visible: root.currentTab && root.currentTab.searching
                             text: qsTr("searching…")
                             color: Colors.accent
@@ -328,6 +331,7 @@ Window {
                             border.width: 1
 
                             Text {
+                                textFormat: Text.PlainText
                                 id: contentsLabel
                                 anchors.centerIn: parent
                                 text: qsTr("Contents")
@@ -365,6 +369,7 @@ Window {
                             border.width: 1
 
                             Text {
+                                textFormat: Text.PlainText
                                 id: filtersLabel
                                 anchors.centerIn: parent
                                 text: qsTr("Filters")
@@ -436,6 +441,7 @@ Window {
                                     spacing: 10
 
                                     Text {
+                                        textFormat: Text.PlainText
                                         text: qsTr("When")
                                         color: Colors.text
                                         font.pixelSize: 12
@@ -464,6 +470,7 @@ Window {
                                     }
 
                                     Text {
+                                        textFormat: Text.PlainText
                                         text: qsTr("What")
                                         color: Colors.text
                                         font.pixelSize: 12
@@ -539,6 +546,7 @@ Window {
                              : tabMouse.containsMouse ? Colors.hover : "transparent"
 
                         Text {
+                            textFormat: Text.PlainText
                             anchors.left: parent.left
                             anchors.leftMargin: 10
                             anchors.right: closeButton.left
@@ -550,6 +558,7 @@ Window {
                         }
 
                         Text {
+                            textFormat: Text.PlainText
                             id: closeButton
 
                             anchors.right: parent.right
@@ -723,6 +732,7 @@ Window {
                             spacing: 10
 
                             Text {
+                                textFormat: Text.PlainText
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 text: qsTr("Server Addresses")
                                 color: Colors.text
@@ -731,6 +741,7 @@ Window {
                             }
 
                             Text {
+                                textFormat: Text.PlainText
                                 width: 320
                                 text: qsTr("Server addresses are made up of a protocol prefix and an address. Examples:")
                                 color: Colors.textDim
@@ -739,6 +750,7 @@ Window {
                             }
 
                             Text {
+                                textFormat: Text.PlainText
                                 width: 320
                                 text: "smb://gnome.org, ssh://192.168.0.1, ftp://[2001:db8::1]"
                                 color: Colors.text
@@ -752,12 +764,14 @@ Window {
                                 rowSpacing: 4
 
                                 Text {
+                                    textFormat: Text.PlainText
                                     text: qsTr("Available Protocols")
                                     color: Colors.text
                                     font.pixelSize: 12
                                     font.bold: true
                                 }
                                 Text {
+                                    textFormat: Text.PlainText
                                     text: qsTr("Prefix")
                                     color: Colors.text
                                     font.pixelSize: 12
@@ -768,6 +782,7 @@ Window {
                                     model: root.protocolCells
                                     delegate: Text {
                                         required property var modelData
+                                        textFormat: Text.PlainText
                                         text: modelData.text
                                         color: modelData.dim ? Colors.textDim : Colors.text
                                         font.pixelSize: 12
@@ -794,6 +809,7 @@ Window {
             }
 
             Text {
+                textFormat: Text.PlainText
                 anchors.left: parent.left
                 anchors.leftMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
@@ -825,6 +841,7 @@ Window {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("Cancel")
                     color: cancelMouse.containsMouse ? Colors.text : Colors.accent
@@ -1377,6 +1394,7 @@ Window {
                 spacing: 0
 
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: qsTr("Icon Size")
                     color: Colors.text
