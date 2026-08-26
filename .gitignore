@@ -4,7 +4,6 @@ build-release/
 
 # Local development files — tracked on the local dev branch only
 NOTES.md
-tests/
 verify-phase1.sh
 verify-ui.sh
 verify-mouse.sh

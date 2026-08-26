@@ -98,6 +98,24 @@ pulled automatically. Optional: `gvfs-smb`/`gvfs-mtp`/`gvfs-gphoto2` for
 network shares, phones and cameras, `ffmpegthumbnailer` for video
 thumbnails, `localsearch` for full-text search.
 
+## Hacking on it
+
+Three scripts are the whole developer interface, and they work from any
+directory:
+
+```bash
+./bin/build      # cmake + ninja into build/, then run ./build/omanta
+./bin/test       # the headless suites (ctest, ~17s)
+./bin/install    # user-local install: ~/.local/bin symlink, desktop entry, icon
+```
+
+`./bin/install` never touches `/usr` or pacman, and installs alongside your
+existing file manager — later rebuilds are picked up without reinstalling. For
+a real package instead, use the `makepkg -si` route above.
+
+Requires `cmake`, `ninja` and the Qt 6 development packages in addition to the
+runtime dependencies above.
+
 ## License
 
 MIT

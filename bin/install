@@ -1,0 +1,43 @@
+#!/usr/bin/env sh
+# Install the working tree for daily use, user-locally and alongside whatever
+# file manager you already have: a symlink to the build (so later rebuilds are
+# picked up without reinstalling), the desktop entry, the icon, the helper
+# scripts, and any context-menu actions you do not already have.
+#
+# Nothing here touches /usr or pacman. The real package builds from the release
+# tag: cd packaging && makepkg -si
+#
+# OMANTA_PREFIX=~/.local by default.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+PREFIX="${OMANTA_PREFIX:-$HOME/.local}"
+ACTIONS_DIR="${OMANTA_ACTIONS_DIR:-$HOME/.config/omanta/actions}"
+
+"$ROOT/bin/build"
+
+mkdir -p "$PREFIX/bin" "$PREFIX/share/applications" \
+  "$PREFIX/share/icons/hicolor/scalable/apps" "$ACTIONS_DIR"
+
+ln -sfn "$ROOT/build/omanta" "$PREFIX/bin/omanta"
+install -m755 "$ROOT/packaging/bin/omanta-switch" "$ROOT/packaging/bin/omanta-launch" \
+  "$ROOT/packaging/bin/omanta-launch-cwd" "$ROOT/packaging/bin/omanta-dropbox-link" \
+  "$PREFIX/bin/"
+install -m644 "$ROOT/packaging/omanta.desktop" "$PREFIX/share/applications/omanta.desktop"
+install -m644 "$ROOT/packaging/omanta.svg" \
+  "$PREFIX/share/icons/hicolor/scalable/apps/omanta.svg"
+
+# Actions are yours to edit once installed, so never overwrite an existing one.
+for action in "$ROOT"/packaging/actions/*.toml; do
+  target="$ACTIONS_DIR/$(basename "$action")"
+  [ -e "$target" ] || install -m644 "$action" "$target"
+done
+
+update-desktop-database -q "$PREFIX/share/applications" >/dev/null 2>&1 || true
+gtk-update-icon-cache -q -t -f "$PREFIX/share/icons/hicolor" >/dev/null 2>&1 || true
+
+echo "Installed to $PREFIX (omanta -> $ROOT/build/omanta)"
+case ":$PATH:" in
+  *":$PREFIX/bin:"*) ;;
+  *) echo "Note: $PREFIX/bin is not on your PATH." >&2 ;;
+esac

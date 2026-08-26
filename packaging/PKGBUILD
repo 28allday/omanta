@@ -30,9 +30,12 @@ source=("$pkgname::git+https://github.com/28allday/omanta.git#tag=v$pkgver")
 sha256sums=('SKIP')
 
 build() {
+    # Tests off: the public tree carries them, but a package build has no
+    # business compiling 17 test binaries, and there is no check().
     cmake -S "$pkgname" -B build -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DOMANTA_BUILD_TESTS=OFF
     cmake --build build
 }
 

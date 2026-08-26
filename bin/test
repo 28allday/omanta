@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+# Build, then run the ctest suites headless. Extra arguments go to ctest,
+# e.g. `./bin/test -R theme`.
+#
+# These are the headless suites, and the only ones that run anywhere. The
+# live-session checks (behaviour + D-Bus, and one that drives a real window)
+# need a Wayland compositor and undisturbed focus, so they are run by hand
+# before a release rather than from here.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+
+"$ROOT/bin/build"
+
+if ! command -v ctest >/dev/null 2>&1; then
+  echo "ctest is required to run the suites." >&2
+  exit 1
+fi
+
+# Hermetic by default: the model suites need no compositor, and offscreen keeps
+# a stray window from stealing focus mid-run. Override by exporting your own.
+: "${QT_QPA_PLATFORM:=offscreen}"
+export QT_QPA_PLATFORM
+
+exec ctest --test-dir "$ROOT/build" --output-on-failure "$@"
