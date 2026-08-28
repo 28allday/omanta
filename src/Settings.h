@@ -62,7 +62,7 @@ class Settings : public QObject
 public:
     explicit Settings(QObject *parent = nullptr);
 
-    bool sortFoldersFirst() const { return boolFor("sortFoldersFirst", false); }
+    bool sortFoldersFirst() const { return boolFor("sortFoldersFirst", true); }
     QString clickPolicy() const { return choiceFor("clickPolicy", {"double", "single"}); }
     bool useTreeView() const { return boolFor("useTreeView", false); }
     bool showCreateLink() const { return boolFor("showCreateLink", false); }

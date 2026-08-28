@@ -50,7 +50,10 @@ void TestSettings::defaultsAreNautilus()
     Settings settings;
 
     // GNOME schema defaults — the parity contract for a fresh Omarchy.
-    QCOMPARE(settings.sortFoldersFirst(), false);
+    // Folders-first is the one deliberate deviation from the schema keys:
+    // Nautilus 50 has no folders-first key and lists folders first in its
+    // views, and users expect it (issue #2) — the toggle remains for mixed.
+    QCOMPARE(settings.sortFoldersFirst(), true);
     QCOMPARE(settings.clickPolicy(), QStringLiteral("double"));
     QCOMPARE(settings.useTreeView(), false);
     QCOMPARE(settings.showCreateLink(), false);
@@ -88,7 +91,7 @@ void TestSettings::invalidValuesFallBackToDefaults()
           "dateTimeFormat=cuneiform\n");
 
     Settings settings;
-    QCOMPARE(settings.sortFoldersFirst(), false);
+    QCOMPARE(settings.sortFoldersFirst(), true);
     QCOMPARE(settings.clickPolicy(), QStringLiteral("double"));
     QCOMPARE(settings.showThumbnails(), QStringLiteral("local-only"));
     QCOMPARE(settings.showDirectoryItemCounts(), QStringLiteral("local-only"));
