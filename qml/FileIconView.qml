@@ -211,14 +211,11 @@ Item {
                 radius: Colors.radius
             }
 
-            // Invisible peg the native drag hangs off — see FileListView.
-            Item {
+            FileDrag {
                 id: dragProxy
 
-                Drag.dragType: Drag.Automatic
-                Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
-                Drag.active: cellMouse.drag.active
-                Drag.hotSpot: Qt.point(9, 9)
+                pressed: cellMouse.pressed
+                dragging: cellMouse.drag.active
             }
 
             MouseArea {
@@ -239,8 +236,8 @@ Item {
                                 ? root.tab.selectedPaths()
                                 : [root.tab.viewingRecent && cell.targetPath !== ""
                                    ? cell.targetPath : cell.filePath];
-                    dragProxy.Drag.mimeData = { "text/uri-list": Platform.uriList(paths) };
-                    cell.grabToImage(result => dragProxy.Drag.imageSource = result.url);
+                    dragProxy.prepare(paths, cell.displayName, preview.source,
+                        Colors.fileIcon(cell.iconSource, cell.isDir ? Colors.accent : Colors.textDim, 36));
                 }
 
                 onClicked: mouse => {

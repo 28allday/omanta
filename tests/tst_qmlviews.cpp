@@ -10,7 +10,9 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickItem>
+#include <QQuickItemGrabResult>
 #include <QQuickWindow>
+#include <QStyleHints>
 #include <QTest>
 
 #include <algorithm>
@@ -132,6 +134,72 @@ static void checkListIconSizing(QQuickWindow *window, QQuickItem *tab,
     QTRY_COMPARE(tab->property("zoom").toInt(), 64);
 }
 
+static void checkDragPreviews(QQuickWindow *window, QQuickItem *tab,
+                              const TempTree &tree, const QStringList &names,
+                              const QColor &thumbnailColor = {})
+{
+    const QString path = tree.filePath(names.first());
+    const int pressDelay = QGuiApplication::styleHints()->mouseDoubleClickInterval() + 1;
+    for (const QString &mode : {QStringLiteral("list"), QStringLiteral("icon")}) {
+        tab->setProperty("viewMode", mode);
+        if (thumbnailColor.isValid()) {
+            // Match the drag's thumbnail request so it can reuse a ready
+            // image, avoiding dependence on the decoder's scheduling speed.
+            QVERIFY(QMetaObject::invokeMethod(tab, "setZoom", Q_ARG(QVariant, 36)));
+        }
+        QTRY_VERIFY(findFileRow(tab, path));
+        auto *row = findFileRow(tab, path);
+        if (thumbnailColor.isValid()) {
+            QTRY_VERIFY(findItem(row, "previewPath", path));
+            QTRY_COMPARE(findItem(row, "previewPath", path)->property("status").toInt(), 1);
+        }
+        QTRY_VERIFY(findItem(row, "ready", false));
+        auto *drag = findItem(row, "ready", false);
+        for (bool multiple : {false, true}) {
+            QVERIFY(QMetaObject::invokeMethod(tab, multiple ? "selectAll" : "clearSelection"));
+            // In grid view the centre is within the icon/label hit area;
+            // in list view it lands in the row, away from its expander.
+            const QPoint point = row->mapToScene(QPointF(row->width() / 2, row->height() / 2)).toPoint();
+            QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, point, pressDelay);
+            QTRY_VERIFY(drag->property("ready").toBool());
+            QCOMPARE(drag->property("itemCount").toInt(), multiple ? names.size() : 1);
+            const auto data = drag->property("mimeData").value<QJSValue>().toVariant().toMap();
+            Platform platform;
+            const QStringList paths = invoke(tab, "selectedPaths").toStringList();
+            QCOMPARE(data.value("text/uri-list").toString(), platform.uriList(paths));
+            QCOMPARE(paths.size(), multiple ? names.size() : 1);
+
+            auto *grab = qobject_cast<QQuickItemGrabResult *>(
+                drag->property("grabResult").value<QObject *>());
+            QVERIFY(grab);
+            const QImage image = grab->image();
+            QVERIFY(!image.isNull());
+            const qreal scale = window->devicePixelRatio();
+            QVERIFY(image.width() <= 300 * scale);
+            QCOMPARE(image.height(), qRound(56 * scale));
+            // A grab must contain the card despite its transparent parent.
+            QVERIFY(image.pixelColor(image.width() / 2, image.height() / 2).alpha() > 0);
+            if (thumbnailColor.isValid())
+                QCOMPARE(image.pixelColor(qRound(28 * scale), qRound(28 * scale)), thumbnailColor);
+            const QString screenshot = qEnvironmentVariable("OMANTA_TEST_DRAG_SCREENSHOT");
+            if (!screenshot.isEmpty())
+                QVERIFY(image.save(screenshot + "-" + mode + (multiple ? "-multi.png" : "-single.png")));
+
+            QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, point);
+            QTRY_VERIFY(!drag->property("ready").toBool());
+            QVERIFY(drag->property("previewUrl").toUrl().isEmpty());
+        }
+
+        // Releasing before the asynchronous grab completes must not leave a
+        // stale preview ready for the next press (or start a late drag).
+        const QPoint point = row->mapToScene(QPointF(row->width() / 2, row->height() / 2)).toPoint();
+        QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, point, pressDelay);
+        QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, point);
+        QTest::qWait(100);
+        QVERIFY(!drag->property("ready").toBool());
+    }
+}
+
 void TestQmlViews::selectionAndVirtualDelegates()
 {
     QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
@@ -141,7 +209,8 @@ void TestQmlViews::selectionAndVirtualDelegates()
                            "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
         qputenv(env, config.filePath(env).toUtf8());
     qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
-    const QStringList names{"selected.txt", "constructor", "toString", "__proto__"};
+    const QStringList names{QStringLiteral("selected-") + QString(160, QLatin1Char('a')) + ".txt",
+                            "constructor", "toString", "__proto__"};
     for (const QString &name : names)
         tree.writeFile(name);
     QQmlApplicationEngine engine;
@@ -181,8 +250,26 @@ void TestQmlViews::selectionAndVirtualDelegates()
     QVERIFY(invoke(tab, "selectedPaths").toStringList().isEmpty());
 
     checkListIconSizing(qobject_cast<QQuickWindow *>(window), tab, tree, names);
+    if (QTest::currentTestFailed())
+        return;
+    checkDragPreviews(qobject_cast<QQuickWindow *>(window), tab, tree, names);
+    if (QTest::currentTestFailed())
+        return;
 
-    const QString selected = tree.filePath("selected.txt");
+    TempTree photos;
+    const QColor thumbnailColor("#31c983");
+    QImage photo(80, 40, QImage::Format_RGB32);
+    photo.fill(thumbnailColor);
+    QVERIFY(photo.save(photos.filePath("photo.png")));
+    photos.writeFile("other.txt");
+    tab->setProperty("path", photos.path());
+    QTRY_COMPARE(window->property("visibleCount").toInt(), 2);
+    checkDragPreviews(qobject_cast<QQuickWindow *>(window), tab, photos,
+                      {"photo.png", "other.txt"}, thumbnailColor);
+    if (QTest::currentTestFailed())
+        return;
+
+    const QString selected = tree.filePath(names.first());
     auto *stars = engine.singletonInstance<StarredStore *>("Omanta", "StarredStore");
     auto *servers = engine.singletonInstance<ServerStore *>("Omanta", "ServerStore");
     QVERIFY(stars);

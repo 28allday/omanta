@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(omanta VERSION 0.1.6 LANGUAGES CXX)
+project(omanta VERSION 0.1.7 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -83,6 +83,7 @@ set(OMANTA_QML_FILES
     qml/Sidebar.qml
     qml/FileListView.qml
     qml/FileIconView.qml
+    qml/FileDrag.qml
     qml/ToolbarButton.qml
     qml/PromptDialog.qml
     qml/PreferencesDialog.qml
