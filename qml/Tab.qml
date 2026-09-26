@@ -56,7 +56,14 @@ FocusScope {
     // View state. The default follows the Settings store, which switching
     // views writes back — Nautilus's default-folder-viewer behaviour.
     property string viewMode: Settings.defaultViewMode
-    property int zoom: 64
+    property int iconZoom: 64
+    property int listZoom: 18
+    readonly property int zoom: viewMode === "list" ? listZoom : iconZoom
+    readonly property var zoomLevels: viewMode === "list"
+        ? [16, 18, 24, 32, 48, 64] : [32, 48, 64, 80, 96, 112, 128]
+    readonly property int minimumZoom: zoomLevels[0]
+    readonly property int maximumZoom: zoomLevels[zoomLevels.length - 1]
+    readonly property int defaultZoom: viewMode === "list" ? 18 : 64
     property bool showHidden: false
     property int sortKey: FileSortFilterModel.ByName
     property bool sortDescending: false
@@ -428,7 +435,33 @@ FocusScope {
         }
     }
 
-    function setZoom(value) { zoom = Math.max(32, Math.min(128, value)); }
+    function setZoom(value) {
+        const size = Math.max(minimumZoom, Math.min(maximumZoom, value));
+        if (viewMode === "list")
+            listZoom = size;
+        else
+            iconZoom = size;
+    }
+
+    function zoomIn() {
+        for (const size of zoomLevels) {
+            if (size > zoom) {
+                setZoom(size);
+                return;
+            }
+        }
+    }
+
+    function zoomOut() {
+        for (let i = zoomLevels.length - 1; i >= 0; --i) {
+            if (zoomLevels[i] < zoom) {
+                setZoom(zoomLevels[i]);
+                return;
+            }
+        }
+    }
+
+    function resetZoom() { setZoom(defaultZoom); }
 
     // The list view's expander click lands here; a no-op when the tree is off.
     function toggleExpand(row) {

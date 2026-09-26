@@ -16,6 +16,9 @@ Omarchy theme.
 
 - List and grid views, tabs, split view (F3), tree expansion, breadcrumbs +
   Ctrl+L, type-ahead, configurable columns
+- Adjustable icon sizes in both views: Ctrl++ / Ctrl+- to resize, Ctrl+0
+  to reset, or use View Options → Icon Size. List and grid sizes are
+  independent within each tab.
 - All write operations — copy/cut/paste (system clipboard, interops with
   other file managers), move, rename, batch rename, trash, delete — with
   undo/redo and a progress popover
@@ -40,8 +43,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.4/omanta-0.1.4-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.4-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.5/omanta-0.1.5-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.5-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —

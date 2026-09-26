@@ -1380,12 +1380,10 @@ Window {
             root.currentTab.sortDescending = descending;
         }
 
-        // The zoom stepper, only for the view the zoom actually drives.
-        // A hidden item still occupies its row, so the height collapses too.
+        // Both views resize their icons, with separate sizes per tab.
         Item {
-            visible: root.viewMode === "icon"
             implicitWidth: 220
-            implicitHeight: visible ? 36 : 0
+            implicitHeight: 36
 
             RowLayout {
                 anchors.fill: parent
@@ -1404,23 +1402,20 @@ Window {
                 ToolbarButton {
                     symbol: "−"
                     tip: "Zoom out (Ctrl+-)"
-                    enabled: root.currentTab && root.currentTab.zoom > 32
-                    onTriggered: root.currentTab.setZoom(root.currentTab.zoom - 16)
+                    enabled: root.currentTab && root.currentTab.zoom > root.currentTab.minimumZoom
+                    onTriggered: root.currentTab.zoomOut()
                 }
 
                 ToolbarButton {
                     symbol: "+"
                     tip: "Zoom in (Ctrl++)"
-                    enabled: root.currentTab && root.currentTab.zoom < 128
-                    onTriggered: root.currentTab.setZoom(root.currentTab.zoom + 16)
+                    enabled: root.currentTab && root.currentTab.zoom < root.currentTab.maximumZoom
+                    onTriggered: root.currentTab.zoomIn()
                 }
             }
         }
 
-        MenuSeparator {
-            visible: root.viewMode === "icon"
-            height: visible ? implicitHeight : 0
-        }
+        MenuSeparator {}
 
         MenuItem { text: qsTr("Sort"); enabled: false }
 
@@ -1956,8 +1951,8 @@ Window {
 
     Shortcut { sequence: "Ctrl+1"; onActivated: root.setViewMode("list") }
     Shortcut { sequence: "Ctrl+2"; onActivated: root.setViewMode("icon") }
-    Shortcut { sequence: "Ctrl++"; onActivated: if (root.currentTab) root.currentTab.setZoom(root.currentTab.zoom + 16) }
-    Shortcut { sequence: "Ctrl+="; onActivated: if (root.currentTab) root.currentTab.setZoom(root.currentTab.zoom + 16) }
-    Shortcut { sequence: "Ctrl+-"; onActivated: if (root.currentTab) root.currentTab.setZoom(root.currentTab.zoom - 16) }
-    Shortcut { sequence: "Ctrl+0"; onActivated: if (root.currentTab) root.currentTab.setZoom(64) }
+    Shortcut { sequence: "Ctrl++"; onActivated: if (root.currentTab) root.currentTab.zoomIn() }
+    Shortcut { sequence: "Ctrl+="; onActivated: if (root.currentTab) root.currentTab.zoomIn() }
+    Shortcut { sequence: "Ctrl+-"; onActivated: if (root.currentTab) root.currentTab.zoomOut() }
+    Shortcut { sequence: "Ctrl+0"; onActivated: if (root.currentTab) root.currentTab.resetZoom() }
 }

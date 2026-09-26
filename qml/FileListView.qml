@@ -11,6 +11,8 @@ Item {
     required property var tab
 
     property alias currentIndex: view.currentIndex
+    readonly property int iconSize: root.tab.zoom
+    readonly property int rowHeight: Math.max(Colors.rowHeight, iconSize + 12)
 
     // Label, sort key and width per column id. Width 0 marks the flex column.
     readonly property var columnMeta: ({
@@ -195,7 +197,7 @@ Item {
                 }
 
                 width: view.width
-                height: Colors.rowHeight
+                height: root.rowHeight
                 color: root.tab.isSelected(name) ? Colors.selection
                      : rowMouse.containsMouse ? Colors.hover
                      : "transparent"
@@ -207,8 +209,11 @@ Item {
                     spacing: 0
 
                     Item {
-                        width: row.width - 20 - root.fixedWidth
+                        id: nameCell
+
+                        width: Math.max(0, row.width - 20 - root.fixedWidth)
                         height: parent.height
+                        clip: true
 
                         Row {
                             anchors.verticalCenter: parent.verticalCenter
@@ -221,7 +226,7 @@ Item {
                             Item {
                                 visible: root.tab.treeActive
                                 width: row.depth * 18 + 14
-                                height: Colors.rowHeight
+                                height: root.rowHeight
 
                                 Text {
                                     textFormat: Text.PlainText
@@ -248,8 +253,8 @@ Item {
                                         || Platform.isLocal(previewPath))
                                     && Thumbnails.canThumbnail(row.contentType, row.size)
 
-                                width: 18
-                                height: 18
+                                width: root.iconSize
+                                height: root.iconSize
                                 anchors.verticalCenter: parent.verticalCenter
                                 fillMode: Image.PreserveAspectFit
                                 source: wantThumbnail ? "image://thumbnail/" + rowPreview.previewPath
@@ -257,7 +262,7 @@ Item {
                                                             root.tab.isSelected(row.name) ? Colors.selectionText
                                                           : row.isDir ? Colors.accent
                                                           : Colors.textDim)
-                                sourceSize: Qt.size(18, 18)
+                                sourceSize: Qt.size(root.iconSize, root.iconSize)
                                 asynchronous: true
                                 cache: true
                                 onStatusChanged: if (status === Image.Error && wantThumbnail)
@@ -271,9 +276,9 @@ Item {
                                 color: root.tab.isSelected(row.name) ? Colors.selectionText : Colors.text
                                 font.pixelSize: 13
                                 elide: Text.ElideRight
-                                width: Math.min(implicitWidth,
-                                                row.width - root.fixedWidth - 60
-                                                - (root.tab.treeActive ? row.depth * 18 + 22 : 0))
+                                width: Math.max(0, Math.min(implicitWidth,
+                                                nameCell.width - root.iconSize - 8
+                                                - (root.tab.treeActive ? row.depth * 18 + 22 : 0)))
                             }
                         }
                     }
@@ -455,9 +460,9 @@ Item {
                     const y2 = Math.max(originY, mouse.y + view.contentY);
                     // Row geometry is uniform, so the hit range is arithmetic
                     // rather than a walk over delegates that may not exist yet.
-                    const first = Math.max(0, Math.floor(y1 / Colors.rowHeight));
+                    const first = Math.max(0, Math.floor(y1 / root.rowHeight));
                     const last = Math.min(root.tab.files.count - 1,
-                                          Math.floor(y2 / Colors.rowHeight));
+                                          Math.floor(y2 / root.rowHeight));
                     if (last >= first)
                         root.tab.selectRange(first, last);
                     else

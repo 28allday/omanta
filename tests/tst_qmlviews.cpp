@@ -10,7 +10,10 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickItem>
+#include <QQuickWindow>
 #include <QTest>
+
+#include <algorithm>
 
 class TestQmlViews : public QObject
 {
@@ -28,15 +31,105 @@ static QVariant invoke(QObject *object, const char *method)
 
 // The visual tree includes instantiated view delegates, unlike QObject's
 // ownership tree where a Loader or the view can keep them elsewhere.
-static QQuickItem *findFileRow(QQuickItem *item, const QString &path)
+static QQuickItem *findItem(QQuickItem *item, const char *property, const QVariant &value)
 {
-    if (item->property("filePath").toString() == path)
+    if (item->property(property) == value)
         return item;
     for (QQuickItem *child : item->childItems()) {
-        if (auto *found = findFileRow(child, path))
+        if (auto *found = findItem(child, property, value))
             return found;
     }
     return nullptr;
+}
+
+static QQuickItem *findFileRow(QQuickItem *item, const QString &path)
+{
+    return findItem(item, "filePath", path);
+}
+
+static void checkListIconSizing(QQuickWindow *window, QQuickItem *tab,
+                                const TempTree &tree, const QStringList &names)
+{
+    QVERIFY(window);
+    window->requestActivate();
+    QTRY_VERIFY(window->isActive());
+    tab->forceActiveFocus();
+    QTest::keyClick(window, Qt::Key_1, Qt::ControlModifier);
+    QTRY_COMPARE(tab->property("viewMode").toString(), QStringLiteral("list"));
+    const QString path = tree.filePath(names.first());
+    QTRY_VERIFY(findItem(tab, "previewPath", path));
+    auto *preview = findItem(tab, "previewPath", path);
+    QCOMPARE(preview->width(), 18);
+    QCOMPARE(findFileRow(tab, path)->height(), 30);
+
+    QTest::keyClick(window, Qt::Key_Equal, Qt::ControlModifier);
+    QTRY_COMPARE(preview->width(), 24);
+    QTest::keyClick(window, Qt::Key_Plus, Qt::ControlModifier);
+    QTRY_COMPARE(preview->width(), 32);
+    QCOMPARE(preview->property("sourceSize").toSize(), QSize(32, 32));
+    QTRY_COMPARE(findFileRow(tab, path)->height(), 44);
+    for (int i = 0; i < 8; ++i)
+        QTest::keyClick(window, Qt::Key_Equal, Qt::ControlModifier);
+    QTRY_COMPARE(preview->width(), 64);
+
+    QList<QQuickItem *> rows;
+    for (const QString &name : names) {
+        auto *row = findFileRow(tab, tree.filePath(name));
+        QVERIFY(row);
+        rows << row;
+    }
+    std::sort(rows.begin(), rows.end(), [](auto *a, auto *b) {
+        return a->property("index").toInt() < b->property("index").toInt();
+    });
+    for (int i = 1; i < rows.size(); ++i)
+        QTRY_COMPARE(rows[i]->y() - rows[i - 1]->y(), rows[i - 1]->height());
+
+    // Clicking an enlarged row and drawing a band from below the list must
+    // still operate on precisely the files under the pointer.
+    const QPoint target = rows[2]->mapToScene(QPointF(100, rows[2]->height() / 2)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target);
+    QTRY_COMPARE(invoke(tab, "selectedPaths").toStringList(),
+                 QStringList{rows[2]->property("filePath").toString()});
+    const QPoint below = rows.last()->mapToScene(QPointF(200, rows.last()->height() + 20)).toPoint();
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, below);
+    QTest::mouseMove(window, target, 30);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, target);
+    const QStringList lastTwo{rows[2]->property("filePath").toString(),
+                              rows[3]->property("filePath").toString()};
+    QTRY_COMPARE(invoke(tab, "selectedPaths").toStringList(), lastTwo);
+
+    const QString screenshot = qEnvironmentVariable("OMANTA_TEST_SCREENSHOT");
+    if (!screenshot.isEmpty())
+        QVERIFY(window->grabWindow().save(screenshot));
+
+    auto *options = findItem(window->contentItem(), "tip", QStringLiteral("View options"));
+    QVERIFY(options);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+        options->mapToScene(QPointF(options->width() / 2, options->height() / 2)).toPoint());
+    QTRY_VERIFY(findItem(window->contentItem(), "tip", QStringLiteral("Zoom out (Ctrl+-)")));
+    auto *smaller = findItem(window->contentItem(), "tip", QStringLiteral("Zoom out (Ctrl+-)"));
+    QTRY_VERIFY(smaller->isVisible());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+        smaller->mapToScene(QPointF(smaller->width() / 2, smaller->height() / 2)).toPoint());
+    QTRY_COMPARE(preview->width(), 48);
+    QTest::keyClick(window, Qt::Key_Escape);
+
+    // List and grid sizes survive switching independently.
+    QTest::keyClick(window, Qt::Key_2, Qt::ControlModifier);
+    QTRY_COMPARE(tab->property("zoom").toInt(), 64);
+    QTest::keyClick(window, Qt::Key_Equal, Qt::ControlModifier);
+    QTRY_COMPARE(tab->property("zoom").toInt(), 80);
+    QTest::keyClick(window, Qt::Key_1, Qt::ControlModifier);
+    QTRY_COMPARE(tab->property("zoom").toInt(), 48);
+    for (int i = 0; i < 8; ++i)
+        QTest::keyClick(window, Qt::Key_Minus, Qt::ControlModifier);
+    QTRY_COMPARE(findItem(tab, "previewPath", path)->width(), 16);
+    QTest::keyClick(window, Qt::Key_0, Qt::ControlModifier);
+    QTRY_COMPARE(findItem(tab, "previewPath", path)->width(), 18);
+    QTest::keyClick(window, Qt::Key_2, Qt::ControlModifier);
+    QTRY_COMPARE(tab->property("zoom").toInt(), 80);
+    QTest::keyClick(window, Qt::Key_0, Qt::ControlModifier);
+    QTRY_COMPARE(tab->property("zoom").toInt(), 64);
 }
 
 void TestQmlViews::selectionAndVirtualDelegates()
@@ -86,6 +179,8 @@ void TestQmlViews::selectionAndVirtualDelegates()
     QCOMPARE(invoke(tab, "selectedPaths").toStringList().size(), 4);
     QVERIFY(QMetaObject::invokeMethod(tab, "clearSelection"));
     QVERIFY(invoke(tab, "selectedPaths").toStringList().isEmpty());
+
+    checkListIconSizing(qobject_cast<QQuickWindow *>(window), tab, tree, names);
 
     const QString selected = tree.filePath("selected.txt");
     auto *stars = engine.singletonInstance<StarredStore *>("Omanta", "StarredStore");
