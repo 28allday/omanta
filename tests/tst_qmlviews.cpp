@@ -1,17 +1,23 @@
 #include "Application.h"
+#include "DirectoryModel.h"
+#include "FileOperations.h"
 #include "IconImageProvider.h"
 #include "Platform.h"
 #include "ServerStore.h"
+#include "Settings.h"
 #include "StarredStore.h"
 #include "SystemTheme.h"
 #include "ThumbnailProvider.h"
 #include "TestFixture.h"
 
 #include <QGuiApplication>
+#include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
+#include <QSignalSpy>
+#include <QStandardPaths>
 #include <QStyleHints>
 #include <QTest>
 
@@ -22,6 +28,7 @@ class TestQmlViews : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void selectionAndVirtualDelegates();
+    void emptyTrashRefreshesOpenViews();
 };
 
 static QVariant invoke(QObject *object, const char *method)
@@ -291,6 +298,120 @@ void TestQmlViews::selectionAndVirtualDelegates()
         tab->setProperty("path", "network:///");
         QTRY_VERIFY(window->property("visibleCount").toInt() >= 1);
         QTRY_VERIFY(findFileRow(tab, server));
+    }
+}
+
+void TestQmlViews::emptyTrashRefreshesOpenViews()
+{
+    if (qEnvironmentVariable("OMANTA_TEST_TRASH_SANDBOX") != QLatin1String("1")) {
+        const QString bwrap = QStandardPaths::findExecutable("bwrap");
+        if (bwrap.isEmpty() || !QFileInfo::exists("/usr/lib/gvfsd-trash"))
+            QSKIP("The isolated Trash integration test requires bubblewrap and gvfs");
+
+        // Empty Trash must never touch the developer's files. The child gets
+        // a fresh filesystem, home, runtime directory and private D-Bus/GVfs.
+        QProcess child;
+        child.setProcessChannelMode(QProcess::MergedChannels);
+        child.start(bwrap, {
+            "--unshare-all", "--die-with-parent",
+            "--ro-bind", "/usr", "/usr", "--ro-bind", "/etc", "/etc",
+            "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib",
+            "--symlink", "usr/lib", "/lib64", "--proc", "/proc", "--dev", "/dev",
+            "--tmpfs", "/tmp", "--dir", "/omanta-test-home", "--dir", "/run/test",
+            "--setenv", "HOME", "/omanta-test-home",
+            "--setenv", "XDG_DATA_HOME", "/omanta-test-home/.local/share",
+            "--setenv", "XDG_CONFIG_HOME", "/omanta-test-home/.config",
+            "--setenv", "XDG_CACHE_HOME", "/omanta-test-home/.cache",
+            "--setenv", "XDG_RUNTIME_DIR", "/run/test",
+            "--setenv", "OMANTA_TEST_TRASH_SANDBOX", "1",
+            "--setenv", "QT_QPA_PLATFORM", "offscreen",
+            "--unsetenv", "QT_QPA_PLATFORMTHEME",
+            "--unsetenv", "DISPLAY", "--unsetenv", "WAYLAND_DISPLAY",
+            "--setenv", "QT_QUICK_BACKEND", "software",
+            "--ro-bind", QCoreApplication::applicationFilePath(), "/test",
+            "--chdir", "/omanta-test-home",
+            "dbus-run-session", "--", "/test", "emptyTrashRefreshesOpenViews"
+        });
+        QVERIFY(child.waitForStarted());
+        QVERIFY(child.waitForFinished(30000));
+        const QByteArray output = child.readAll();
+        if (child.exitStatus() != QProcess::NormalExit || child.exitCode() != 0)
+            qWarning().noquote() << output;
+        QVERIFY2(child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0,
+                 output.right(2500).constData());
+        return;
+    }
+
+    QCOMPARE(QDir::homePath(), QStringLiteral("/omanta-test-home"));
+    QVERIFY(QDir().mkpath(QDir::homePath() + "/.local/share/Trash/files"));
+    QVERIFY(QDir().mkpath(QDir::homePath() + "/.local/share/Trash/info"));
+    // The original bug calls g_file_get_child(trash, "/") for the root's
+    // attribute notification, then leaves the removal batch unfinished.
+    g_log_set_always_fatal(G_LOG_LEVEL_CRITICAL);
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(QStringLiteral("trash:///"));
+    QList<QQuickWindow *> windows;
+    for (QObject *child : application.children()) {
+        if (auto *window = qobject_cast<QQuickWindow *>(child))
+            windows << window;
+    }
+    QCOMPARE(windows.size(), 1);
+    auto *window = windows.first();
+    auto *tab = qobject_cast<QQuickItem *>(window->property("currentTab").value<QObject *>());
+    QVERIFY(tab);
+    auto *model = tab->findChild<DirectoryModel *>();
+    QVERIFY(model);
+    QTRY_VERIFY(!model->loading());
+    QVERIFY2(model->errorMessage().isEmpty(), qPrintable(model->errorMessage()));
+    QCOMPARE(model->count(), 0);
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    auto *ops = engine.singletonInstance<FileOperations *>("Omanta", "FileOperations");
+    auto *settings = engine.singletonInstance<Settings *>("Omanta", "Settings");
+    QVERIFY(ops);
+    QVERIFY(settings);
+    QObject *confirmation = nullptr;
+    for (QObject *child : window->findChildren<QObject *>()) {
+        if (child->property("confirmText").toString() == QLatin1String("Empty Trash")) {
+            confirmation = child;
+            break;
+        }
+    }
+    QVERIFY(confirmation);
+
+    for (const QString &mode : {QStringLiteral("list"), QStringLiteral("icon"), QStringLiteral("tree")}) {
+        settings->setUseTreeView(mode == QLatin1String("tree"));
+        tab->setProperty("viewMode", mode == QLatin1String("icon") ? "icon" : "list");
+        TempTree tree(TempTree::UnderHome);
+        const QString first = tree.writeFile("first.txt");
+        const QString second = tree.writeFile("with spaces.txt");
+        tree.writeFile("folder/child.txt");
+        ops->trash({first, second, tree.filePath("folder")});
+        QTRY_VERIFY(!ops->busy());
+        QVERIFY2(ops->lastError().isEmpty(), qPrintable(ops->lastError()));
+        QTRY_COMPARE(window->property("visibleCount").toInt(), 3);
+
+        QVERIFY(QMetaObject::invokeMethod(confirmation, "open"));
+        QTRY_VERIFY(confirmation->property("visible").toBool());
+        auto *button = findItem(window->contentItem(), "text", QStringLiteral("Empty Trash"));
+        QVERIFY(button);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+            button->mapToScene(QPointF(button->width() / 2, button->height() / 2)).toPoint());
+        QTRY_VERIFY(!confirmation->property("visible").toBool());
+        QTRY_VERIFY(!ops->busy());
+        QVERIFY2(ops->lastError().isEmpty(), qPrintable(ops->lastError()));
+        QTRY_COMPARE(model->count(), 0);
+        QTRY_COMPARE(window->property("visibleCount").toInt(), 0);
+        QCOMPARE(tab->property("path").toString(), QStringLiteral("trash:///"));
+        QCOMPARE(tab->property("statusText").toString(), QStringLiteral("0 items"));
+        QCOMPARE(resets.count(), 0);
     }
 }
 

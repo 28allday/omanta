@@ -665,8 +665,12 @@ void DirectoryModel::onMonitorChanged(GFileMonitor *, GFile *file, GFile *other,
 {
     auto *model = static_cast<DirectoryModel *>(data);
 
-    auto basenameOf = [](GFile *f) -> QString {
-        if (!f)
+    auto basenameOf = [model](GFile *f) -> QString {
+        // Trash also reports attribute changes for the watched root itself.
+        // Only direct children belong in the refresh batch: treating the
+        // root's "/" basename as a child makes GIO reject the query, leaving
+        // the batch waiting forever and its deleted rows still on screen.
+        if (!f || !g_file_has_parent(f, model->m_dir))
             return {};
         char *base = g_file_get_basename(f);
         QString result = QString::fromUtf8(base ? base : "");

@@ -45,8 +45,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.9/omanta-0.1.9-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.9-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.10/omanta-0.1.10-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.10-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —
@@ -120,6 +120,10 @@ a real package instead, use the `makepkg -si` route above.
 
 Requires `cmake`, `ninja` and the Qt 6 development packages in addition to the
 runtime dependencies above.
+
+The Empty Trash integration test also needs `bubblewrap` and GVfs. It runs
+with a separate filesystem, home directory and D-Bus session; it is skipped
+when those dependencies are unavailable.
 
 ## License
 
