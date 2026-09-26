@@ -409,6 +409,17 @@ void TestArchives::wrongPasswordAsksAgainNotErrors()
                                  QStringLiteral("wrong"), &produced, &error,
                                  &needsPassphrase));
     QVERIFY2(needsPassphrase, qPrintable(error));
+
+    // ZipCrypto's one-byte check lets about 1 in 256 wrong passwords past it;
+    // those fail later as data errors. Enough tries to meet several: every
+    // one must still ask again rather than report a broken archive.
+    for (int attempt = 0; attempt < 2000; ++attempt) {
+        const QString guess = QStringLiteral("wrong-%1").arg(attempt);
+        needsPassphrase = false;
+        QVERIFY(!engineExtractLocked(tree.filePath("locked.zip"), tree.filePath("out"),
+                                     guess, &produced, &error, &needsPassphrase));
+        QVERIFY2(needsPassphrase, qPrintable(guess + ": " + error));
+    }
 }
 
 void TestArchives::bsdtarCanReadOurEncryptedZip()

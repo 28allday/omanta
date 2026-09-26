@@ -8,7 +8,8 @@ Omarchy theme.
 ![omanta](docs/screenshot.png)
 
 > **Testing preview.** omanta installs *alongside* your existing file manager
-> and touches nothing until you opt in. A bundled switcher flips between the
+> and stays out of the way until you choose it. The only thing it adds by
+> itself is a switch in the Omarchy Toggle menu. The switch flips between the
 > two and restores the stock setup byte-identically. Please file issues for
 > anything that doesn't behave exactly as you'd expect.
 
@@ -17,8 +18,8 @@ Omarchy theme.
 - List and grid views, tabs, split view (F3), tree expansion, breadcrumbs +
   Ctrl+L, type-ahead, configurable columns
 - Adjustable icon sizes in both views: Ctrl++ / Ctrl+- to resize, Ctrl+0
-  to reset, or use View Options → Icon Size. List and grid sizes are
-  independent within each tab.
+  to reset, or use View Options → Icon Size. List and grid each keep their
+  own size, shared by every window and remembered after a restart.
 - Theme-coloured folders with two-tone panels and special-location symbols;
   small icons simplify their detail for clarity.
 - All write operations — copy/cut/paste (system clipboard, interops with
@@ -50,8 +51,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.14/omanta-0.1.14-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.14-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.15/omanta-0.1.15-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.15-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —
@@ -70,6 +71,17 @@ remains the file manager until you switch.
 
 ## Switching
 
+The first time you open omanta, it adds an **Omanta File Manager** row to
+the Omarchy Toggle menu (`SUPER+CTRL+O`). Select it to switch either way.
+It shows a ✓ while omanta is the default, so the menu doubles as a status
+check. If you remove the row, omanta won't add it back.
+
+omanta's **Preferences → Default File Manager** has the same controls:
+one switch makes omanta the default, the other shows or hides the
+Toggle-menu row.
+
+From a terminal:
+
 ```bash
 omanta-switch omanta     # make omanta the default
 omanta-switch nautilus   # back to stock
@@ -77,11 +89,9 @@ omanta-switch toggle     # flip
 omanta-switch status     # what's active right now
 ```
 
-Or from the desktop: run `omanta-switch install-menu` once and the Omarchy
-Toggle menu (`SUPER+CTRL+O`) gains an **Omanta File Manager** row — select
-it to switch either way. It shows a ✓ while omanta is the default, so the
-menu doubles as a status check. The row appears instantly (no shell
-restart) and `omanta-switch remove-menu` takes it out again.
+`omanta-switch install-menu` and `omanta-switch remove-menu` add and remove
+the Toggle-menu row. The row appears or disappears straight away, with no
+shell restart.
 
 Switching makes omanta (or Nautilus) the default everywhere at once:
 `SUPER+SHIFT+F`, folders opened from other apps, and double-clicked
@@ -96,7 +106,7 @@ after switching.
 ## Uninstall
 
 ```bash
-omanta-switch nautilus && omanta-switch remove-menu   # if you switched
+omanta-switch nautilus && omanta-switch remove-menu   # stock default, no menu row
 sudo pacman -R omanta
 ```
 

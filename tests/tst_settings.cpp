@@ -25,6 +25,7 @@ private Q_SLOTS:
     void listVisibleFollowsColumnOrder();
     void iconCaptionsAlwaysThreeSlots();
     void backgroundOpacityValidates();
+    void iconSizesPersistAndValidate();
 
 private:
     QTemporaryDir m_dir;
@@ -214,6 +215,31 @@ void TestSettings::backgroundOpacityValidates()
     write("backgroundOpacity=opaque\n");
     Settings garbage;
     QCOMPARE(garbage.backgroundOpacity(), 1.0);
+}
+
+void TestSettings::iconSizesPersistAndValidate()
+{
+    // Nautilus's defaults until changed; then remembered across restarts.
+    Settings fresh;
+    QCOMPARE(fresh.iconZoom(), 64);
+    QCOMPARE(fresh.listZoom(), 18);
+
+    fresh.setIconZoom(112);
+    fresh.setListZoom(32);
+    Settings persisted;
+    QCOMPARE(persisted.iconZoom(), 112);
+    QCOMPARE(persisted.listZoom(), 32);
+
+    // Outside the views' ranges or not a number → default.
+    write("iconZoom=4000\nlistZoom=2\n");
+    Settings outOfRange;
+    QCOMPARE(outOfRange.iconZoom(), 64);
+    QCOMPARE(outOfRange.listZoom(), 18);
+
+    write("iconZoom=huge\nlistZoom=\n");
+    Settings garbage;
+    QCOMPARE(garbage.iconZoom(), 64);
+    QCOMPARE(garbage.listZoom(), 18);
 }
 
 QTEST_GUILESS_MAIN(TestSettings)

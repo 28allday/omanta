@@ -15,6 +15,7 @@
 #include <QGuiApplication>
 #include <QProcess>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
@@ -25,15 +26,33 @@
 #include <QTest>
 
 #include <algorithm>
+#include <functional>
 
 class TestQmlViews : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void initTestCase();
     void selectionAndVirtualDelegates();
     void emptyTrashRefreshesOpenViews();
     void pasteKeepsCopiedFilesOnClipboard();
+    void thumbnailsFollowInPlaceEdits();
+    void dragPreviewSurvivesItsOwner();
+
+private:
+    QTemporaryDir m_cache;
 };
+
+void TestQmlViews::initTestCase()
+{
+    // Thumbnails are generated here, and must never land in the real
+    // ~/.cache/thumbnails shared with every other application.
+    QVERIFY(m_cache.isValid());
+    qputenv("XDG_CACHE_HOME", m_cache.path().toUtf8());
+    // Every window offers the Omarchy Toggle-menu row on first launch; these
+    // suites must never edit the real desktop's menu or bindings.
+    qputenv("OMANTA_SWITCH", "/nonexistent/omanta-switch");
+}
 
 static QVariant invoke(QObject *object, const char *method)
 {
@@ -141,6 +160,21 @@ static void checkListIconSizing(QQuickWindow *window, QQuickItem *tab,
     QTRY_COMPARE(findItem(tab, "previewPath", path)->width(), 18);
     QTest::keyClick(window, Qt::Key_2, Qt::ControlModifier);
     QTRY_COMPARE(tab->property("zoom").toInt(), 80);
+
+    // Sizes are remembered: saved to the settings file, and a new tab (as a
+    // new window or a restart would) opens at them rather than the default.
+    const auto saved = [] {
+        QFile settings(qEnvironmentVariable("OMANTA_SETTINGS_FILE"));
+        return settings.open(QIODevice::ReadOnly) ? settings.readAll() : QByteArray();
+    };
+    QTRY_VERIFY(saved().contains("iconZoom=80"));
+    QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier);
+    QTRY_VERIFY(window->property("currentTab").value<QObject *>() != tab);
+    auto *second = window->property("currentTab").value<QObject *>();
+    QTRY_COMPARE(second->property("zoom").toInt(), 80);
+    QTest::keyClick(window, Qt::Key_W, Qt::ControlModifier);
+    QTRY_VERIFY(window->property("currentTab").value<QObject *>() == tab);
+
     QTest::keyClick(window, Qt::Key_0, Qt::ControlModifier);
     QTRY_COMPARE(tab->property("zoom").toInt(), 64);
 }
@@ -642,6 +676,152 @@ void TestQmlViews::pasteKeepsCopiedFilesOnClipboard()
     QTRY_VERIFY(!operations->property("busy").toBool());
     QVERIFY(!QFileInfo::exists(cut));
     QVERIFY(clipboard->paths().isEmpty());
+}
+
+void TestQmlViews::thumbnailsFollowInPlaceEdits()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+
+    // Every edit is stamped with the same whole second: a picture re-saved
+    // within the second it was made must still get a fresh preview.
+    const QDateTime stamp = QDateTime::currentDateTime().addSecs(-60);
+    const auto writePicture = [&](const QString &name, int w, int h) {
+        QImage image(w, h, QImage::Format_RGB32);
+        image.fill(Qt::darkCyan);
+        QVERIFY(image.save(tree.filePath(name), "png"));
+        tree.setModified(name, stamp);
+    };
+    // '#', '%' and '?' would otherwise be read as URL syntax.
+    const QStringList names{QStringLiteral("edited.png"),
+                            QStringLiteral("shot #1 100% done?.png")};
+    for (const QString &name : names)
+        writePicture(name, 120, 40);
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.path());
+    QObject *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = child;
+            break;
+        }
+    }
+    QVERIFY(window);
+    auto *tab = qobject_cast<QQuickItem *>(window->property("currentTab").value<QObject *>());
+    QVERIFY(tab);
+    QTRY_COMPARE(window->property("visibleCount").toInt(), 2);
+
+    // Landscape before the edit, portrait after: the painted shape tells the
+    // old picture from the new one without reading pixels back.
+    // Visible only: a view mode switch leaves the old view's delegates in
+    // the tree until the Loader's deferred delete runs.
+    const auto preview = [&](const QString &name) {
+        const std::function<QQuickItem *(QQuickItem *)> find = [&](QQuickItem *item) -> QQuickItem * {
+            if (!item->isVisible())
+                return nullptr;
+            if (item->property("previewPath") == tree.filePath(name))
+                return item;
+            for (QQuickItem *child : item->childItems()) {
+                if (auto *found = find(child))
+                    return found;
+            }
+            return nullptr;
+        };
+        return find(tab);
+    };
+    const auto isThumbnail = [](QQuickItem *item) {
+        return item && item->property("source").toUrl().scheme() == QLatin1String("image")
+            && item->property("source").toUrl().host() == QLatin1String("thumbnail")
+            && item->property("status").toInt() == 1; // Image.Ready
+    };
+    const auto isLandscape = [](QQuickItem *item) {
+        return item->property("paintedWidth").toReal() > item->property("paintedHeight").toReal();
+    };
+
+    for (const QString &mode : {QStringLiteral("icon"), QStringLiteral("list")}) {
+        tab->setProperty("viewMode", mode);
+        for (const QString &name : names) {
+            writePicture(name, 120, 40);
+            QTRY_VERIFY2(isThumbnail(preview(name)), qPrintable(mode + ": " + name));
+            QTRY_VERIFY2(isLandscape(preview(name)), qPrintable(mode + ": " + name));
+        }
+
+        // The file monitor alone must bring the new picture in. Same whole
+        // second, so it is the size (and millisecond mtime, where the
+        // filesystem keeps one) that tells the versions apart; a different
+        // pixel count guarantees the bytes differ.
+        for (const QString &name : names) {
+            const qint64 before = QFileInfo(tree.filePath(name)).size();
+            writePicture(name, 40, 160);
+            QVERIFY(QFileInfo(tree.filePath(name)).size() != before);
+        }
+        for (const QString &name : names) {
+            QTRY_VERIFY2(isThumbnail(preview(name)), qPrintable(mode + " live: " + name));
+            QTRY_VERIFY2(!isLandscape(preview(name)), qPrintable(mode + " live: " + name));
+        }
+
+        // And so must Reload, which rebuilds every row from scratch.
+        QVERIFY(QMetaObject::invokeMethod(tab, "reload"));
+        QTRY_COMPARE(window->property("visibleCount").toInt(), 2);
+        for (const QString &name : names) {
+            QTRY_VERIFY2(isThumbnail(preview(name)), qPrintable(mode + " reload: " + name));
+            QVERIFY2(!isLandscape(preview(name)), qPrintable(mode + " reload: " + name));
+        }
+    }
+}
+
+void TestQmlViews::dragPreviewSurvivesItsOwner()
+{
+    // Leaving a view right after pressing a file destroys the drag proxy
+    // while its deferred capture check is still queued. That check must die
+    // with the proxy instead of running against a torn-down scope.
+    QTest::failOnWarning(QRegularExpression("TypeError|is not a function|ReferenceError|invalid context"));
+    TempTree tree;
+    const QString file = tree.writeFile("pressed.txt");
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+
+    // A view delegate, as the list and icon views hold it: navigating away
+    // resets the model, which clears the delegate's context straight away
+    // and deletes the item later.
+    QQmlComponent component(&engine);
+    component.setData("import QtQuick\nimport Omanta\n"
+                      "ListView { width: 200; height: 200; model: 1\n"
+                      "  delegate: FileDrag { width: 10; height: 10; pressed: true; dragging: false } }",
+                      QUrl());
+    QScopedPointer<QObject> view(component.create());
+    QVERIFY2(view, qPrintable(component.errorString()));
+    for (int round = 0; round < 20; ++round) {
+        view->setProperty("model", 1);
+        QQuickItem *drag = nullptr;
+        QTRY_VERIFY(QMetaObject::invokeMethod(view.get(), "itemAtIndex",
+                        Q_RETURN_ARG(QQuickItem *, drag), Q_ARG(int, 0)) && drag);
+        QVERIFY(QMetaObject::invokeMethod(drag, "prepare",
+            Q_ARG(QVariant, QStringList{file}), Q_ARG(QVariant, QStringLiteral("pressed.txt")),
+            Q_ARG(QVariant, QString()), Q_ARG(QVariant, QString())));
+        view->setProperty("model", 0); // leave the view before the check runs
+        QCoreApplication::processEvents();
+        QTest::qWait(5);
+    }
 }
 
 #include "tst_qmlviews.moc"

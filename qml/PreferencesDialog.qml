@@ -46,6 +46,8 @@ Dialog {
 
     onAboutToShow: {
         syncFromSettings();
+        // The Toggle menu or a terminal may have switched it meanwhile.
+        DefaultFileManager.refresh();
         // A dialog that reopens mid-scroll looks broken.
         scroller.contentItem.contentY = 0;
     }
@@ -66,6 +68,19 @@ Dialog {
         captionSecond.currentIndex = captionIndex(captions[1]);
         captionThird.currentIndex = captionIndex(captions[2]);
         opacitySlider.value = Settings.backgroundOpacity;
+        syncFileManager();
+    }
+
+    // Imperative like the rest: a Switch's own toggle breaks a binding, and
+    // the truth arrives later, from the switcher's status.
+    function syncFileManager() {
+        defaultSwitch.checked = DefaultFileManager.isDefault;
+        toggleMenuSwitch.checked = DefaultFileManager.menuInstalled;
+    }
+
+    Connections {
+        target: DefaultFileManager
+        function onStatusChanged() { root.syncFileManager(); }
     }
 
     // Caption combos share one value/label order; "none" leads as default.
@@ -199,6 +214,38 @@ Dialog {
                 PrefSwitch {
                     id: treeViewSwitch
                     onToggled: Settings.useTreeView = checked
+                }
+            }
+
+            SectionTitle {
+                visible: DefaultFileManager.available
+                text: qsTr("Default File Manager")
+            }
+            SectionCaption {
+                visible: DefaultFileManager.available
+                text: DefaultFileManager.lastError !== ""
+                      ? DefaultFileManager.lastError
+                      : qsTr("Open folders, downloads and Super+Shift+F in Omanta instead of Nautilus. Switch back at any time.")
+                color: DefaultFileManager.lastError !== "" ? Colors.error : Colors.textDim
+            }
+
+            PrefRow {
+                visible: DefaultFileManager.available
+                label: qsTr("Use Omanta as the Default")
+                PrefSwitch {
+                    id: defaultSwitch
+                    enabled: DefaultFileManager.known && !DefaultFileManager.busy
+                    onToggled: DefaultFileManager.setDefault(checked)
+                }
+            }
+
+            PrefRow {
+                visible: DefaultFileManager.available && DefaultFileManager.omarchy
+                label: qsTr("Show Switch in Omarchy Toggle Menu")
+                PrefSwitch {
+                    id: toggleMenuSwitch
+                    enabled: DefaultFileManager.known && !DefaultFileManager.busy
+                    onToggled: DefaultFileManager.setMenuInstalled(checked)
                 }
             }
 

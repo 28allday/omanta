@@ -242,12 +242,14 @@ Item {
                             Image {
                                 id: rowPreview
 
-                                property bool thumbnailFailed: false
+                                property string failedSource: ""
                                 // recent:/// rows point at a real file elsewhere.
                                 readonly property string previewPath:
                                     row.targetPath !== "" ? row.targetPath : row.filePath
+                                readonly property string thumbnailSource:
+                                    Thumbnails.source(previewPath, row.modified, row.size)
                                 readonly property bool wantThumbnail:
-                                    !thumbnailFailed
+                                    thumbnailSource !== failedSource
                                     && Settings.showThumbnails !== "never"
                                     && (Settings.showThumbnails === "always"
                                         || Platform.isLocal(previewPath))
@@ -257,7 +259,7 @@ Item {
                                 height: root.iconSize
                                 anchors.verticalCenter: parent.verticalCenter
                                 fillMode: Image.PreserveAspectFit
-                                source: wantThumbnail ? "image://thumbnail/" + rowPreview.previewPath
+                                source: wantThumbnail ? thumbnailSource
                                                       : Colors.fileIcon(row.iconSource,
                                                             root.tab.isSelected(row.name) ? Colors.selectionText
                                                           : row.isDir ? Colors.accent
@@ -266,7 +268,7 @@ Item {
                                 asynchronous: true
                                 cache: true
                                 onStatusChanged: if (status === Image.Error && wantThumbnail)
-                                                     thumbnailFailed = true
+                                                     failedSource = thumbnailSource
                             }
 
                             Text {

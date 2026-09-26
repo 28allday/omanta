@@ -142,6 +142,15 @@ set_tests_properties(tst_qmlviews PROPERTIES TIMEOUT 60
 add_test(NAME tst_dropbox_helper COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tst_dropbox_helper.sh
     ${CMAKE_SOURCE_DIR}/packaging/bin/omanta-dropbox-link)
 
+# Drives the real packaging/bin/omanta-switch inside a throwaway XDG home.
+omanta_test(tst_switcher
+    ${CMAKE_SOURCE_DIR}/src/DefaultFileManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/Settings.cpp
+)
+target_compile_definitions(tst_switcher PRIVATE
+    OMANTA_SWITCH_SCRIPT="${CMAKE_SOURCE_DIR}/packaging/bin/omanta-switch"
+    OMANTA_DESKTOP_FILE="${CMAKE_SOURCE_DIR}/packaging/omanta.desktop")
+
 omanta_test(tst_faultrecovery
     ${CMAKE_SOURCE_DIR}/src/Location.cpp
     ${CMAKE_SOURCE_DIR}/src/FileOperations.cpp

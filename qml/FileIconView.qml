@@ -134,13 +134,17 @@ Item {
                     // JPEG, a codec the decoder doesn't have — so the delegate
                     // quietly falls back to the file-type icon rather than
                     // showing a broken image.
-                    property bool thumbnailFailed: false
+                    // Remembered per URL, and the URL changes with the file, so an
+                    // edited file that now decodes gets another try.
+                    property string failedSource: ""
                     // recent:/// rows point at a real file elsewhere; the
                     // thumbnail cache and generators want that, not the row.
                     readonly property string previewPath:
                         cell.targetPath !== "" ? cell.targetPath : cell.filePath
+                    readonly property string thumbnailSource:
+                        Thumbnails.source(previewPath, cell.modified, cell.size)
                     readonly property bool wantThumbnail:
-                        !thumbnailFailed
+                        thumbnailSource !== failedSource
                         && Settings.showThumbnails !== "never"
                         && (Settings.showThumbnails === "always"
                             || Platform.isLocal(previewPath))
@@ -150,7 +154,7 @@ Item {
                     width: root.iconSize
                     height: root.iconSize
                     fillMode: Image.PreserveAspectFit
-                    source: wantThumbnail ? "image://thumbnail/" + preview.previewPath
+                    source: wantThumbnail ? thumbnailSource
                                           : Colors.fileIcon(cell.iconSource,
                                                 root.tab.isSelected(cell.name) ? Colors.selectionText
                                               : cell.isDir ? Colors.accent
@@ -158,7 +162,7 @@ Item {
                     sourceSize: Qt.size(root.iconSize, root.iconSize)
                     asynchronous: true
                     cache: true
-                    onStatusChanged: if (status === Image.Error && wantThumbnail) thumbnailFailed = true
+                    onStatusChanged: if (status === Image.Error && wantThumbnail) failedSource = thumbnailSource
                 }
 
                 Text {

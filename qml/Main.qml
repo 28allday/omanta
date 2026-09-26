@@ -174,6 +174,8 @@ Window {
         addTab(root.initialPath, root.initialSelection);
         if (currentTab)
             currentTab.forceActiveFocus();
+        // First launch on Omarchy puts the switch in the Toggle menu, once.
+        DefaultFileManager.offerToggleMenu(Settings);
     }
 
     // ---- chrome -----------------------------------------------------------

@@ -38,6 +38,7 @@ const char *FileEntry::queryAttributes()
            G_FILE_ATTRIBUTE_STANDARD_ICON ","
            G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE ","
            G_FILE_ATTRIBUTE_TIME_MODIFIED ","
+           G_FILE_ATTRIBUTE_TIME_MODIFIED_USEC ","
            G_FILE_ATTRIBUTE_TIME_CREATED ","
            G_FILE_ATTRIBUTE_TIME_CREATED_USEC ","
            G_FILE_ATTRIBUTE_TIME_ACCESS ","
@@ -102,8 +103,11 @@ FileEntry FileEntry::fromInfo(GFileInfo *info)
                                              : QString::fromUtf8(target);
     }
 
+    // Millisecond precision too: an edit within the same second must still
+    // change the row, or its thumbnail keeps the old picture.
     if (GDateTime *modified = g_file_info_get_modification_date_time(info)) {
-        entry.modified = QDateTime::fromSecsSinceEpoch(g_date_time_to_unix(modified));
+        entry.modified = QDateTime::fromMSecsSinceEpoch(
+            g_date_time_to_unix(modified) * 1000 + g_date_time_get_microsecond(modified) / 1000);
         g_date_time_unref(modified);
     }
 

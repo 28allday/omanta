@@ -58,6 +58,13 @@ class Settings : public QObject
     // the way a terminal's background_opacity works — backdrop translucent,
     // text and controls opaque. 1 = solid, floor 0.5 keeps content readable.
     Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY changed)
+    // Icon sizes, one per view, shared by every window and remembered:
+    // Nautilus keeps its zoom levels as global settings too.
+    Q_PROPERTY(int iconZoom READ iconZoom WRITE setIconZoom NOTIFY changed)
+    Q_PROPERTY(int listZoom READ listZoom WRITE setListZoom NOTIFY changed)
+    // Bookkeeping, not a preference: the Toggle-menu row is added on first
+    // launch only, so removing it sticks.
+    Q_PROPERTY(bool toggleMenuOffered READ toggleMenuOffered WRITE setToggleMenuOffered NOTIFY changed)
 
 public:
     explicit Settings(QObject *parent = nullptr);
@@ -76,6 +83,9 @@ public:
     QStringList listVisibleColumns() const;
     QStringList iconCaptions() const;
     qreal backgroundOpacity() const { return realFor("backgroundOpacity", 1.0, 0.5, 1.0); }
+    bool toggleMenuOffered() const { return boolFor("toggleMenuOffered", false); }
+    int iconZoom() const { return qRound(realFor("iconZoom", 64, 32, 128)); }
+    int listZoom() const { return qRound(realFor("listZoom", 18, 16, 64)); }
 
     // Every column id, canonical order. The QML layer owns labels and widths.
     Q_INVOKABLE static QStringList allListColumns();
@@ -96,6 +106,9 @@ public:
     void setListVisibleColumns(const QStringList &value) { set("listVisibleColumns", value.join(QLatin1Char(','))); }
     void setIconCaptions(const QStringList &value) { set("iconCaptions", value.join(QLatin1Char(','))); }
     void setBackgroundOpacity(qreal value) { set("backgroundOpacity", QString::number(value, 'f', 2)); }
+    void setToggleMenuOffered(bool value) { set("toggleMenuOffered", value ? "true" : "false"); }
+    void setIconZoom(int value) { set("iconZoom", QString::number(value)); }
+    void setListZoom(int value) { set("listZoom", QString::number(value)); }
 
 Q_SIGNALS:
     // One signal for the lot: preference flips are rare and every consumer

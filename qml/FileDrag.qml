@@ -51,7 +51,7 @@ Item {
         // A ready thumbnail is preferred, but a slow remote thumbnail must
         // never hold up dragging: after a short grace period use its icon.
         captureTimeout.restart();
-        Qt.callLater(captureIfReady);
+        captureCheck.restart();
     }
 
     function captureIfReady() {
@@ -77,8 +77,24 @@ Item {
             ready = true;
     }
 
+    // Destruction clears the context before the item itself is deleted;
+    // neither timer may fire into that gap.
+    Component.onDestruction: {
+        captureCheck.stop();
+        captureTimeout.stop();
+    }
+
     onPressedChanged: if (!pressed && !dragging) reset()
     onDraggingChanged: if (!pressed && !dragging) reset()
+
+    // Deferred to the next event-loop pass, like Qt.callLater, but owned by
+    // this item: a view left right after a press tears the delegate down,
+    // and a queued Qt.callLater would still run against its dead context.
+    Timer {
+        id: captureCheck
+        interval: 0
+        onTriggered: root.captureIfReady()
+    }
 
     Timer {
         id: captureTimeout
@@ -117,7 +133,7 @@ Item {
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             visible: status === Image.Ready
-            onStatusChanged: Qt.callLater(root.captureIfReady)
+            onStatusChanged: captureCheck.restart()
         }
 
         Text {

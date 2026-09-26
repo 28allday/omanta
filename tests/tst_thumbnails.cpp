@@ -6,8 +6,12 @@
 #include <QImage>
 #include <QPainter>
 #include <QStandardPaths>
+#include <QQuickImageResponse>
+#include <QSignalSpy>
 #include <QTest>
 #include <QUrl>
+
+#include <memory>
 
 // Thumbnails, tested against the freedesktop spec rather than against my
 // assumptions about it. Two of these exist because the first working build got
@@ -30,6 +34,9 @@ private Q_SLOTS:
 
     void storesAndReusesACachedThumbnail();
     void invalidatesTheCacheWhenTheFileChanges();
+    void invalidatesTheCacheWithinTheSameSecond();
+    void sourceRoundTripsAwkwardNames();
+    void providerAnswersOnlyTheVersionAsked();
     void remembersFailuresButNotForever();
 
     void detectsTypeByContentNotExtension();
@@ -176,6 +183,76 @@ void TestThumbnails::invalidatesTheCacheWhenTheFileChanges()
 
     QVERIFY2(ThumbnailCache::loadValid(path, 256).isNull(),
              "an edited file must not keep showing its old thumbnail");
+}
+
+void TestThumbnails::invalidatesTheCacheWithinTheSameSecond()
+{
+    // Thumb::MTime is whole seconds: a picture re-saved inside the second it
+    // was written, then pinned back to that second, still has to invalidate.
+    TempTree tree;
+    const QDateTime when = QDateTime::currentDateTime().addSecs(-30);
+    const QString path = writeImage(tree, QStringLiteral("resaved.png"), 300, 100);
+    tree.setModified(QStringLiteral("resaved.png"), when);
+    ThumbnailCache::store(path, 256, ThumbnailCache::render(path, QStringLiteral("image/png"), 256));
+    QVERIFY(!ThumbnailCache::loadValid(path, 256).isNull());
+
+    writeImage(tree, QStringLiteral("resaved.png"), 100, 300);
+    tree.setModified(QStringLiteral("resaved.png"), when);
+    QVERIFY2(ThumbnailCache::loadValid(path, 256).isNull(),
+             "a same-second re-save must not keep showing its old thumbnail");
+}
+
+void TestThumbnails::sourceRoundTripsAwkwardNames()
+{
+    Thumbnails thumbnails;
+    const QDateTime when = QDateTime::fromMSecsSinceEpoch(1700000000123);
+    for (const QString &path : {QStringLiteral("/tmp/plain.png"),
+                                QStringLiteral("/tmp/shot #1 100% done?.png"),
+                                QStringLiteral("/tmp/%2F%25 literal.png"),
+                                QStringLiteral("/tmp/ünïcødé 写真.jpg")}) {
+        const QUrl url(thumbnails.source(path, when, 42));
+        QCOMPARE(url.scheme(), QStringLiteral("image"));
+        QCOMPARE(url.host(), QStringLiteral("thumbnail"));
+        QVERIFY2(url.query().isEmpty() && url.fragment().isEmpty(), qPrintable(url.toString()));
+        // What QQuickPixmap hands the provider as the id.
+        const QString id = url.toString(QUrl::RemoveScheme | QUrl::RemoveAuthority).mid(1);
+        QCOMPARE(Thumbnails::pathFromId(id), path);
+    }
+
+    // Any change to the file changes the URL, and nothing else does.
+    const QString base = thumbnails.source(QStringLiteral("/tmp/a.png"), when, 42);
+    QCOMPARE(thumbnails.source(QStringLiteral("/tmp/a.png"), when, 42), base);
+    QVERIFY(thumbnails.source(QStringLiteral("/tmp/a.png"), when.addMSecs(1), 42) != base);
+    QVERIFY(thumbnails.source(QStringLiteral("/tmp/a.png"), when, 43) != base);
+}
+
+void TestThumbnails::providerAnswersOnlyTheVersionAsked()
+{
+    // Qt caches whatever comes back under the URL. A URL naming an older
+    // version must not be answered with a picture of the file as it is now.
+    TempTree tree;
+    const QString path = writeImage(tree, QStringLiteral("versioned.png"), 300, 100);
+    const QFileInfo info(path);
+    Thumbnails thumbnails;
+    ThumbnailProvider provider;
+    const auto ask = [&](const QString &url) {
+        const QString id = QUrl(url).toString(QUrl::RemoveScheme | QUrl::RemoveAuthority).mid(1);
+        std::unique_ptr<QQuickImageResponse> response(
+            provider.requestImageResponse(id, QSize(128, 128)));
+        QSignalSpy finished(response.get(), &QQuickImageResponse::finished);
+        if (!finished.wait(10000))
+            return QString("timeout");
+        std::unique_ptr<QQuickTextureFactory> texture(response->textureFactory());
+        return response->errorString().isEmpty() ? QString("image") : response->errorString();
+    };
+
+    QCOMPARE(ask(thumbnails.source(path, info.lastModified(), info.size())), QString("image"));
+    QCOMPARE(ask(thumbnails.source(path, info.lastModified().addMSecs(-1), info.size())),
+             QString("file changed"));
+    QCOMPARE(ask(thumbnails.source(path, info.lastModified(), info.size() + 1)),
+             QString("file changed"));
+    // No mtime known (a remote row): whatever is there is the answer.
+    QCOMPARE(ask(thumbnails.source(path, QDateTime(), 0)), QString("image"));
 }
 
 void TestThumbnails::remembersFailuresButNotForever()

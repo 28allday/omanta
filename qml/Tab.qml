@@ -56,8 +56,10 @@ FocusScope {
     // View state. The default follows the Settings store, which switching
     // views writes back — Nautilus's default-folder-viewer behaviour.
     property string viewMode: Settings.defaultViewMode
-    property int iconZoom: 64
-    property int listZoom: 18
+    // Remembered in Settings, so every tab and window shares one size per
+    // view and it survives a restart.
+    readonly property int iconZoom: Settings.iconZoom
+    readonly property int listZoom: Settings.listZoom
     readonly property int zoom: viewMode === "list" ? listZoom : iconZoom
     readonly property var zoomLevels: viewMode === "list"
         ? [16, 18, 24, 32, 48, 64] : [32, 48, 64, 80, 96, 112, 128]
@@ -485,9 +487,9 @@ FocusScope {
     function setZoom(value) {
         const size = Math.max(minimumZoom, Math.min(maximumZoom, value));
         if (viewMode === "list")
-            listZoom = size;
+            Settings.listZoom = size;
         else
-            iconZoom = size;
+            Settings.iconZoom = size;
     }
 
     function zoomIn() {

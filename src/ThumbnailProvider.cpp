@@ -89,34 +89,56 @@ QImage ThumbnailCache::loadValid(const QString &filePath, int bucket)
 
     // Thumb::MTime is what makes the cache correct rather than merely fast: an
     // edited file must not keep showing its old preview.
+    const QFileInfo info(filePath);
     const QString recorded = image.text(QStringLiteral("Thumb::MTime"));
-    const qint64 actual = QFileInfo(filePath).lastModified().toSecsSinceEpoch();
-    if (recorded.isEmpty() || recorded.toLongLong() != actual)
+    if (recorded.isEmpty() || recorded.toLongLong() != info.lastModified().toSecsSinceEpoch())
+        return {};
+
+    // Thumb::MTime has one-second resolution, so a picture re-saved within
+    // the second it was written would pass that check. Size (optional in the
+    // spec) and our own millisecond stamp catch those, where present.
+    const QString size = image.text(QStringLiteral("Thumb::Size"));
+    if (!size.isEmpty() && size.toLongLong() != info.size())
+        return {};
+    const QString msecs = image.text(QStringLiteral("X-Omanta::MTime-MSec"));
+    if (!msecs.isEmpty() && msecs.toLongLong() != info.lastModified().toMSecsSinceEpoch())
         return {};
 
     return image;
 }
 
-void ThumbnailCache::store(const QString &filePath, int bucket, QImage image)
+ThumbnailCache::Version ThumbnailCache::Version::of(const QString &filePath)
 {
-    if (image.isNull())
+    const QFileInfo info(filePath);
+    if (!info.exists())
+        return {};
+    return { info.lastModified().toMSecsSinceEpoch(), info.size() };
+}
+
+void ThumbnailCache::store(const QString &filePath, int bucket, QImage image,
+                           const Version &rendered)
+{
+    if (image.isNull() || rendered.size < 0)
         return;
 
     const QString cached = cachePathFor(filePath, bucket);
     QDir().mkpath(QFileInfo(cached).absolutePath());
 
-    const QFileInfo info(filePath);
     image.setText(QStringLiteral("Thumb::URI"), uriFor(filePath));
     image.setText(QStringLiteral("Thumb::MTime"),
-                  QString::number(info.lastModified().toSecsSinceEpoch()));
-    image.setText(QStringLiteral("Thumb::Size"), QString::number(info.size()));
+                  QString::number(QDateTime::fromMSecsSinceEpoch(rendered.modifiedMSecs)
+                                      .toSecsSinceEpoch()));
+    image.setText(QStringLiteral("Thumb::Size"), QString::number(rendered.size));
+    image.setText(QStringLiteral("X-Omanta::MTime-MSec"), QString::number(rendered.modifiedMSecs));
     image.setText(QStringLiteral("Software"), QStringLiteral("omanta"));
 
     image.save(cached, "png");
 }
 
-void ThumbnailCache::markFailed(const QString &filePath)
+void ThumbnailCache::markFailed(const QString &filePath, const Version &attempted)
 {
+    if (attempted.size < 0)
+        return;
     const QString marker = failMarkerFor(filePath);
     QDir().mkpath(QFileInfo(marker).absolutePath());
 
@@ -126,7 +148,9 @@ void ThumbnailCache::markFailed(const QString &filePath)
     marker1x1.fill(Qt::transparent);
     marker1x1.setText(QStringLiteral("Thumb::URI"), uriFor(filePath));
     marker1x1.setText(QStringLiteral("Thumb::MTime"),
-                      QString::number(QFileInfo(filePath).lastModified().toSecsSinceEpoch()));
+                      QString::number(QDateTime::fromMSecsSinceEpoch(attempted.modifiedMSecs)
+                                          .toSecsSinceEpoch()));
+    marker1x1.setText(QStringLiteral("Thumb::Size"), QString::number(attempted.size));
     marker1x1.save(marker, "png");
 }
 
@@ -137,10 +161,12 @@ bool ThumbnailCache::hasFailed(const QString &filePath)
         return false;
 
     QImage image(marker);
+    const QFileInfo info(filePath);
     const QString recorded = image.text(QStringLiteral("Thumb::MTime"));
-    const qint64 actual = QFileInfo(filePath).lastModified().toSecsSinceEpoch();
+    const QString size = image.text(QStringLiteral("Thumb::Size"));
     // A file that has changed since it failed deserves another go.
-    return !recorded.isEmpty() && recorded.toLongLong() == actual;
+    return !recorded.isEmpty() && recorded.toLongLong() == info.lastModified().toSecsSinceEpoch()
+        && (size.isEmpty() || size.toLongLong() == info.size());
 }
 
 void ThumbnailCache::ensureRegistryLoaded()
@@ -329,8 +355,9 @@ namespace {
 class ThumbnailResponse : public QQuickImageResponse, public QRunnable
 {
 public:
-    ThumbnailResponse(const QString &filePath, int size)
+    ThumbnailResponse(const QString &filePath, const ThumbnailCache::Version &expected, int size)
         : m_filePath(filePath)
+        , m_expected(expected)
         , m_bucket(ThumbnailCache::bucketFor(size))
     {
         setAutoDelete(false);
@@ -349,6 +376,9 @@ public:
             return;
         }
 
+        if (superseded(ThumbnailCache::Version::of(m_filePath)))
+            return;
+
         if (QImage cached = ThumbnailCache::loadValid(m_filePath, m_bucket); !cached.isNull()) {
             m_image = cached;
             Q_EMIT finished();
@@ -360,17 +390,33 @@ public:
             return;
         }
 
-        const QString mimeType = ThumbnailCache::contentTypeOf(m_filePath);
+        // A file being saved over while it renders (an editor writing, a
+        // copy landing) yields either the old picture or a half-written
+        // decode failure. Neither may be recorded against the new version,
+        // so render again until the file holds still.
+        QImage generated;
+        ThumbnailCache::Version version;
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            version = ThumbnailCache::Version::of(m_filePath);
+            const QString mimeType = ThumbnailCache::contentTypeOf(m_filePath);
+            generated = ThumbnailCache::render(m_filePath, mimeType, m_bucket);
+            if (ThumbnailCache::Version::of(m_filePath) == version) {
+                if (generated.isNull())
+                    ThumbnailCache::markFailed(m_filePath, version);
+                else
+                    ThumbnailCache::store(m_filePath, m_bucket, generated, version);
+                break;
+            }
+        }
 
-        const QImage generated = ThumbnailCache::render(m_filePath, mimeType, m_bucket);
+        if (superseded(version))
+            return;
 
         if (generated.isNull()) {
-            ThumbnailCache::markFailed(m_filePath);
             fail(QStringLiteral("could not render"));
             return;
         }
 
-        ThumbnailCache::store(m_filePath, m_bucket, generated);
         m_image = generated;
         Q_EMIT finished();
     }
@@ -378,6 +424,19 @@ public:
     QString errorString() const override { return m_error; }
 
 private:
+    // Qt caches the answer under the URL, and the URL names one version of
+    // the file. Answering it with a picture of any other version would
+    // cache that picture as this version's, to be served back if the file
+    // is ever at this version again. The view asks afresh once its model
+    // catches up with the file.
+    bool superseded(const ThumbnailCache::Version &actual)
+    {
+        if (m_expected.modifiedMSecs <= 0 || actual == m_expected)
+            return false;
+        fail(QStringLiteral("file changed"));
+        return true;
+    }
+
     void fail(const QString &reason)
     {
         // The view falls back to the file-type icon when a response errors, so
@@ -387,6 +446,7 @@ private:
     }
 
     QString m_filePath;
+    ThumbnailCache::Version m_expected;
     int m_bucket;
     QImage m_image;
     QString m_error;
@@ -398,7 +458,9 @@ QQuickImageResponse *ThumbnailProvider::requestImageResponse(const QString &id,
                                                              const QSize &requestedSize)
 {
     const int size = requestedSize.width() > 0 ? requestedSize.width() : 128;
-    auto *response = new ThumbnailResponse(id, size);
+    ThumbnailCache::Version expected;
+    const QString path = Thumbnails::pathFromId(id, &expected);
+    auto *response = new ThumbnailResponse(path, expected, size);
     QThreadPool::globalInstance()->start(response);
     return response;
 }
@@ -442,4 +504,31 @@ bool Thumbnails::canThumbnail(const QString &mimeType, qint64 fileSize) const
         return m_maximumFileSize <= 0 || fileSize <= m_maximumFileSize;
 
     return ThumbnailCache::canHandle(mimeType);
+}
+
+QString Thumbnails::source(const QString &filePath, const QDateTime &modified,
+                           qint64 fileSize) const
+{
+    // "<version>/<encoded path>": the version is opaque to the provider,
+    // which only needs the path back.
+    const qint64 msecs = modified.isValid() ? modified.toMSecsSinceEpoch() : 0;
+    return QStringLiteral("image://thumbnail/%1-%2/%3")
+        .arg(msecs)
+        .arg(fileSize)
+        .arg(QString::fromLatin1(QUrl::toPercentEncoding(filePath, "/")));
+}
+
+QString Thumbnails::pathFromId(const QString &id, ThumbnailCache::Version *version)
+{
+    const int slash = id.indexOf(QLatin1Char('/'));
+    if (slash < 0)
+        return {};
+    if (version) {
+        const QStringList parts = id.left(slash).split(QLatin1Char('-'));
+        if (parts.size() == 2)
+            *version = { parts.at(0).toLongLong(), parts.at(1).toLongLong() };
+    }
+    // Qt hands the id over partly decoded, but never a literal '%' (it stays
+    // %25), so decoding once more always recovers the original bytes.
+    return QUrl::fromPercentEncoding(id.mid(slash + 1).toUtf8());
 }

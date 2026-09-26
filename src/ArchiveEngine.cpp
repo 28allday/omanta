@@ -453,8 +453,15 @@ bool extract(const QString &archivePath, const QString &destinationDir, QString 
                 entry, QDir(staging).filePath(QDir::cleanPath(linkPath)).toUtf8().constData());
         }
 
-        if (archive_read_extract(reader, entry, flags) < ARCHIVE_OK)
+        if (archive_read_extract(reader, entry, flags) < ARCHIVE_OK) {
+            // ZipCrypto checks a password against one byte, so about one
+            // wrong password in 256 gets through and the garbage it decrypts
+            // fails later as a data error. On an encrypted entry read with a
+            // password, that is still a wrong password.
+            if (needsPassphrase && !password.isEmpty() && archive_entry_is_data_encrypted(entry))
+                *needsPassphrase = true;
             return bail(archiveError(reader, "Could not extract the archive"));
+        }
 
         progress(archive_filter_bytes(reader, -1), archiveBytes);
     }

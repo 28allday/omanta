@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QHash>
 #include <QImage>
 #include <QMutex>
@@ -33,10 +34,25 @@ public:
     static QString cachePathFor(const QString &filePath, int bucket);
     static QString failMarkerFor(const QString &filePath);
 
+    // Which version of a file a thumbnail was made from.
+    struct Version
+    {
+        qint64 modifiedMSecs = -1;
+        qint64 size = -1;
+        static Version of(const QString &filePath);
+        bool operator==(const Version &) const = default;
+    };
+
     // A cached thumbnail is only valid while the source hasn't changed since.
     static QImage loadValid(const QString &filePath, int bucket);
-    static void store(const QString &filePath, int bucket, QImage image);
-    static void markFailed(const QString &filePath);
+    // Stamped with the version that was rendered, which must be read BEFORE
+    // rendering: stamping afterwards would label a picture of the old
+    // contents as the new ones if the file is saved over mid-render.
+    static void store(const QString &filePath, int bucket, QImage image, const Version &rendered);
+    static void store(const QString &filePath, int bucket, QImage image)
+    { store(filePath, bucket, std::move(image), Version::of(filePath)); }
+    static void markFailed(const QString &filePath, const Version &attempted);
+    static void markFailed(const QString &filePath) { markFailed(filePath, Version::of(filePath)); }
     static bool hasFailed(const QString &filePath);
 
     // Registered .thumbnailer handlers, keyed by MIME type. Parsed once.
@@ -87,6 +103,18 @@ public:
     // and the file is not so large that decoding it would cost more than the
     // preview is worth.
     Q_INVOKABLE bool canThumbnail(const QString &mimeType, qint64 fileSize) const;
+
+    // The image:// URL for a file's thumbnail. It carries the file's
+    // modification time and size, so an edited file gets a new URL: Qt's
+    // pixmap cache is keyed on the URL and would otherwise keep serving the
+    // old picture, even across a reload. The path is percent-encoded so
+    // names containing '#', '?' or '%' are not read as URL syntax.
+    Q_INVOKABLE QString source(const QString &filePath, const QDateTime &modified,
+                               qint64 fileSize) const;
+    // The inverse, as the provider sees it: the file path an id names, and
+    // optionally the version of it the id asks for (a zero mtime means
+    // "whatever is there": remote rows may not report one).
+    static QString pathFromId(const QString &id, ThumbnailCache::Version *version = nullptr);
 
 Q_SIGNALS:
     void enabledChanged();
