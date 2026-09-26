@@ -1,4 +1,5 @@
 #include "Application.h"
+#include "Clipboard.h"
 #include "DirectoryModel.h"
 #include "FileOperations.h"
 #include "IconImageProvider.h"
@@ -31,6 +32,7 @@ class TestQmlViews : public QObject
 private Q_SLOTS:
     void selectionAndVirtualDelegates();
     void emptyTrashRefreshesOpenViews();
+    void pasteKeepsCopiedFilesOnClipboard();
 };
 
 static QVariant invoke(QObject *object, const char *method)
@@ -576,4 +578,70 @@ void TestQmlViews::emptyTrashRefreshesOpenViews()
 }
 
 QTEST_MAIN(TestQmlViews)
+// Copy, then paste: the copied files stay on the clipboard, so they can be
+// pasted again (into another folder, or here as a second copy). Only a cut is
+// used up by its paste. The bug this guards cleared the clipboard after every
+// paste, because paste() passed "from a cut" as true unconditionally.
+void TestQmlViews::pasteKeepsCopiedFilesOnClipboard()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    const QString copied = tree.writeFile("source/copied.txt");
+    const QString cut = tree.writeFile("source/cut.txt");
+    QVERIFY(QDir().mkpath(tree.filePath("target")));
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.filePath("target"));
+    QObject *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = child;
+            break;
+        }
+    }
+    QVERIFY(window);
+    auto *clipboard = engine.singletonInstance<Clipboard *>("Omanta", "Clipboard");
+    auto *operations = engine.singletonInstance<QObject *>("Omanta", "FileOperations");
+    QVERIFY(clipboard);
+    QVERIFY(operations);
+
+    clipboard->copyFiles({copied});
+    QVERIFY(QMetaObject::invokeMethod(window, "paste"));
+    QTRY_VERIFY(QFileInfo::exists(tree.filePath("target/copied.txt")));
+    QTRY_VERIFY(!operations->property("busy").toBool());
+    QVERIFY(QFileInfo::exists(copied));
+    QCOMPARE(clipboard->paths(), QStringList{copied});
+    QVERIFY(!clipboard->isCut());
+
+    // A second paste of the same copy lands too. The name is taken now, so
+    // it waits on the conflict dialog; answer Keep both, as a person would.
+    QVERIFY(QMetaObject::invokeMethod(window, "paste"));
+    QTRY_VERIFY(window->property("pendingTransfer").value<QJSValue>().isObject());
+    QVERIFY(QMetaObject::invokeMethod(window, "performTransfer",
+                                      Q_ARG(QVariant, int(FileOperations::RenameNew))));
+    QTRY_COMPARE(QDir(tree.filePath("target")).entryList(QDir::Files).size(), 2);
+    QTRY_VERIFY(!operations->property("busy").toBool());
+    QCOMPARE(clipboard->paths(), QStringList{copied});
+
+    clipboard->cutFiles({cut});
+    QVERIFY(QMetaObject::invokeMethod(window, "paste"));
+    QTRY_VERIFY(QFileInfo::exists(tree.filePath("target/cut.txt")));
+    QTRY_VERIFY(!operations->property("busy").toBool());
+    QVERIFY(!QFileInfo::exists(cut));
+    QVERIFY(clipboard->paths().isEmpty());
+}
+
 #include "tst_qmlviews.moc"

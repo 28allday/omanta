@@ -1080,7 +1080,10 @@ Window {
     function paste() {
         if (!currentTab || !viewWritable)
             return;
-        startTransfer(Clipboard.paths(), currentTab.path, Clipboard.isCut(), true);
+        // Only a cut is used up by its paste; copied files stay on the
+        // clipboard to be pasted again, as in Nautilus.
+        const cut = Clipboard.isCut();
+        startTransfer(Clipboard.paths(), currentTab.path, cut, cut);
     }
 
     // One flow for everything that lands files somewhere: paste and drops
