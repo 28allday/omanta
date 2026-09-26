@@ -140,10 +140,14 @@ Dialog {
         id: scroller
 
         clip: true
+        // ScrollView overlays its bars by default. Reserve a separate gutter
+        // so the vertical bar never covers the row controls.
+        rightPadding: ScrollBar.vertical.width + 8
         contentWidth: availableWidth
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
         Column {
-            width: parent.width
+            width: scroller.availableWidth
             spacing: 8
 
             SectionTitle { text: qsTr("General"); topPadding: 0 }
