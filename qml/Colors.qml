@@ -42,4 +42,13 @@ QtObject {
     function tint(iconSource, color) {
         return iconSource + "?c=" + String(color).substring(1);
     }
+
+    // File-view folders have a front panel and optional location emblem;
+    // navigation/chrome continue to use the compact monochrome symbols.
+    function fileIcon(iconSource, color, iconSize) {
+        // The provider receives physical pixels. Choose detail from the
+        // logical size so a 16px icon stays simple on a high-DPI screen too.
+        return tint(iconSource, color) + "&style=content&detail="
+            + (iconSize >= 24 ? "full" : "simple");
+    }
 }

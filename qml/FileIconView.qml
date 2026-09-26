@@ -151,10 +151,10 @@ Item {
                     height: root.iconSize
                     fillMode: Image.PreserveAspectFit
                     source: wantThumbnail ? "image://thumbnail/" + preview.previewPath
-                                          : Colors.tint(cell.iconSource,
+                                          : Colors.fileIcon(cell.iconSource,
                                                 root.tab.isSelected(cell.name) ? Colors.selectionText
                                               : cell.isDir ? Colors.accent
-                                              : Colors.textDim)
+                                              : Colors.textDim, root.iconSize)
                     sourceSize: Qt.size(root.iconSize, root.iconSize)
                     asynchronous: true
                     cache: true

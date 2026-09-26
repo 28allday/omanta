@@ -3,6 +3,7 @@
 #include <QIcon>
 #include <QPainter>
 #include <QSvgRenderer>
+#include <QUrlQuery>
 
 namespace {
 
@@ -67,6 +68,65 @@ const char *glyphSvg(const QString &key)
     return nullptr;
 }
 
+// File views keep the folder silhouette even for special locations. Use
+// GIO's identities (including user-dir configuration), never display names.
+QString contentFolder(QString name)
+{
+    if (name.endsWith(QLatin1String("-symbolic")))
+        name.chop(9);
+    if (name == QLatin1String("user-home"))
+        return QStringLiteral("content-folder-home");
+    for (const char *kind : {"documents", "download", "pictures", "music", "videos"}) {
+        if (name == QLatin1String("folder-") + QLatin1String(kind))
+            return QStringLiteral("content-folder-") + QLatin1String(kind);
+    }
+    if (name.startsWith(QLatin1String("folder")) || name == QLatin1String("inode-directory"))
+        return QStringLiteral("content-folder");
+    return {};
+}
+
+QString folderSvg(const QString &glyph, bool details)
+{
+    // The back tab sits behind a rounded front panel. Two solid tones stay
+    // legible at small sizes, without shadows or a fixed theme background.
+    QString svg = QStringLiteral(
+        "<path fill=\"%B%\" d=\"M2 6.5 A2 2 0 0 1 4 4.5 H9 "
+        "a2 2 0 0 1 1.5.7 l1.3 1.6 H20 a2 2 0 0 1 2 2 V18 "
+        "a2 2 0 0 1 -2 2 H4 a2 2 0 0 1 -2 -2 z\"/>"
+        "<rect fill=\"%C%\" x=\"2\" y=\"9\" width=\"20\" height=\"11\" rx=\"2\"/>");
+
+    // At 16/18px an emblem competes with the silhouette. Reveal the detail
+    // once there is enough room to render its strokes cleanly.
+    if (!details)
+        return svg;
+
+    QString emblem;
+    if (glyph == QLatin1String("content-folder-documents"))
+        emblem = QStringLiteral("<rect x=\"9\" y=\"11\" width=\"6\" height=\"7\" rx=\".7\"/>"
+                                "<path d=\"M10.7 13.4 h2.6 M10.7 15.6 h2.6\"/>");
+    else if (glyph == QLatin1String("content-folder-download"))
+        emblem = QStringLiteral("<path d=\"M12 11 v5 M9.5 13.5 12 16 l2.5-2.5 "
+                                "M9 17.8 h6\"/>");
+    else if (glyph == QLatin1String("content-folder-pictures"))
+        emblem = QStringLiteral("<rect x=\"8\" y=\"11.5\" width=\"8\" height=\"6\" rx=\".7\"/>"
+                                "<circle cx=\"10.3\" cy=\"13.4\" r=\".65\" fill=\"%E%\" stroke=\"none\"/>"
+                                "<path d=\"M8.5 17 11 14.5 l1.6 1.5 1.4-1 1.5 2\"/>");
+    else if (glyph == QLatin1String("content-folder-music"))
+        emblem = QStringLiteral("<path d=\"M11 16.6 v-5 l4-1 v5\"/>"
+                                "<g fill=\"%E%\" stroke=\"none\">"
+                                "<ellipse cx=\"9.8\" cy=\"16.8\" rx=\"1.7\" ry=\"1.2\"/>"
+                                "<ellipse cx=\"13.8\" cy=\"15.8\" rx=\"1.7\" ry=\"1.2\"/></g>");
+    else if (glyph == QLatin1String("content-folder-videos"))
+        emblem = QStringLiteral("<path fill=\"%E%\" stroke=\"none\" d=\"M10 11.3 15.5 14.5 10 17.7 z\"/>");
+    else if (glyph == QLatin1String("content-folder-home"))
+        emblem = QStringLiteral("<path d=\"M8.3 14 12 10.8 15.7 14 "
+                                "M9.3 13.4 v4.4 h5.4 v-4.4 M12 17.8 v-2.5\"/>");
+    if (!emblem.isEmpty())
+        svg += QStringLiteral("<g fill=\"none\" stroke=\"%E%\" stroke-width=\"1.15\" "
+                              "stroke-linecap=\"round\" stroke-linejoin=\"round\">%1</g>").arg(emblem);
+    return svg;
+}
+
 // One GIO icon-name candidate → a glyph key, or empty for "no opinion".
 QString glyphForName(QString name)
 {
@@ -128,10 +188,13 @@ QPixmap IconImageProvider::requestPixmap(const QString &id, QSize *size, const Q
 {
     const int edge = requestedSize.width() > 0 ? requestedSize.width() : kDefaultSize;
 
-    const qsizetype query = id.indexOf(QLatin1String("?c="));
-    QPixmap pixmap = query < 0
+    const qsizetype queryStart = id.indexOf(QLatin1Char('?'));
+    const QUrlQuery query(queryStart < 0 ? QString() : id.mid(queryStart + 1));
+    QPixmap pixmap = !query.hasQueryItem(QStringLiteral("c"))
         ? themedPixmap(id, edge)
-        : glyphPixmap(id.left(query), id.mid(query + 3), edge);
+        : glyphPixmap(id.left(queryStart), query.queryItemValue(QStringLiteral("c")), edge,
+                      query.queryItemValue(QStringLiteral("style")) == QLatin1String("content"),
+                      edge >= 24 && query.queryItemValue(QStringLiteral("detail")) != QLatin1String("simple"));
 
     if (size)
         *size = pixmap.size();
@@ -163,20 +226,25 @@ QPixmap IconImageProvider::themedPixmap(const QString &names, int edge) const
     return pixmap;
 }
 
-QPixmap IconImageProvider::glyphPixmap(const QString &names, const QString &colorHex, int edge)
+QPixmap IconImageProvider::glyphPixmap(const QString &names, const QString &colorHex, int edge,
+                                      bool content, bool details)
 {
     QString glyph;
     const QStringList candidates = names.split(QLatin1Char(','), Qt::SkipEmptyParts);
     for (const QString &name : candidates) {
-        glyph = glyphForName(name);
+        glyph = content ? contentFolder(name) : QString();
+        if (glyph.isEmpty())
+            glyph = glyphForName(name);
         if (!glyph.isEmpty())
             break;
     }
     if (glyph.isEmpty())
         glyph = QStringLiteral("file");
 
+    const bool folder = glyph.startsWith(QLatin1String("content-folder"));
     const QString cacheKey = glyph + QLatin1Char('|') + colorHex + QLatin1Char('|')
-                             + QString::number(edge);
+                             + QString::number(edge)
+                             + (folder && details ? QLatin1String("|full") : QLatin1String("|simple"));
     {
         QMutexLocker locker(&m_mutex);
         const auto it = m_cache.constFind(cacheKey);
@@ -192,8 +260,19 @@ QPixmap IconImageProvider::glyphPixmap(const QString &names, const QString &colo
     // (a QML colour stringifies as #aarrggbb) rides on painter opacity.
     QString svg = QStringLiteral(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\">%1</svg>")
-        .arg(QString::fromLatin1(glyphSvg(glyph)));
+        .arg(folder ? folderSvg(glyph, details) : QString::fromLatin1(glyphSvg(glyph)));
     svg.replace(QLatin1String("%C%"), color.name(QColor::HexRgb));
+    if (folder) {
+        svg.replace(QLatin1String("%B%"), color.darker(135).name(QColor::HexRgb));
+        // Contrast against the front panel while retaining a little of its
+        // hue. This also keeps emblems visible on white/black selected icons.
+        const qreal luminance = .2126 * color.redF() + .7152 * color.greenF() + .0722 * color.blueF();
+        const qreal target = luminance > .5 ? 0 : 1;
+        const QColor emblem = QColor::fromRgbF(.4 * color.redF() + .6 * target,
+                                               .4 * color.greenF() + .6 * target,
+                                               .4 * color.blueF() + .6 * target);
+        svg.replace(QLatin1String("%E%"), emblem.name(QColor::HexRgb));
+    }
 
     QImage image(edge, edge, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);

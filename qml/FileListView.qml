@@ -258,10 +258,10 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                                 fillMode: Image.PreserveAspectFit
                                 source: wantThumbnail ? "image://thumbnail/" + rowPreview.previewPath
-                                                      : Colors.tint(row.iconSource,
+                                                      : Colors.fileIcon(row.iconSource,
                                                             root.tab.isSelected(row.name) ? Colors.selectionText
                                                           : row.isDir ? Colors.accent
-                                                          : Colors.textDim)
+                                                          : Colors.textDim, root.iconSize)
                                 sourceSize: Qt.size(root.iconSize, root.iconSize)
                                 asynchronous: true
                                 cache: true
