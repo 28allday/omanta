@@ -18,8 +18,13 @@ Dialog {
     modal: true
     closePolicy: Popup.CloseOnEscape
     title: qsTr("Preferences")
-    padding: 20
+    padding: 24
+    // Keep the cards centred while leaving room for the bar in the margin.
+    leftPadding: rightPadding
+    rightPadding: Math.max(24, scroller.ScrollBar.vertical.width + 12)
     topPadding: 12
+
+    readonly property int controlWidth: 190
 
     background: Rectangle {
         color: Colors.chrome
@@ -34,7 +39,8 @@ Dialog {
         color: Colors.text
         font.pixelSize: 16
         font.bold: true
-        leftPadding: 20
+        leftPadding: root.leftPadding
+        rightPadding: root.rightPadding
         topPadding: 18
     }
 
@@ -104,7 +110,7 @@ Dialog {
             id: rowLayout
             anchors.fill: parent
             anchors.leftMargin: 14
-            anchors.rightMargin: 10
+            anchors.rightMargin: 14
             spacing: 8
 
             Text {
@@ -116,6 +122,22 @@ Dialog {
                 elide: Text.ElideRight
             }
         }
+    }
+
+    component PrefComboBox: ComboBox {
+        Layout.minimumWidth: root.controlWidth
+        Layout.preferredWidth: root.controlWidth
+        Layout.maximumWidth: root.controlWidth
+        implicitHeight: 32
+        font.pixelSize: 13
+    }
+
+    component PrefSwitch: Switch {
+        // Align the visible indicator with the dropdowns' right edge.
+        padding: 0
+        leftPadding: 12
+        spacing: 0
+        implicitHeight: 32
     }
 
     component SectionTitle: Text {
@@ -140,11 +162,14 @@ Dialog {
         id: scroller
 
         clip: true
-        // ScrollView overlays its bars by default. Reserve a separate gutter
-        // so the vertical bar never covers the row controls.
-        rightPadding: ScrollBar.vertical.width + 8
         contentWidth: availableWidth
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        // Place the bar outside the clipped content, within the dialog's
+        // right margin. The cards then have equal space on both sides.
+        ScrollBar.vertical.parent: scroller.parent
+        ScrollBar.vertical.x: scroller.x + scroller.width + 6
+        ScrollBar.vertical.y: scroller.y
+        ScrollBar.vertical.height: scroller.height
 
         Column {
             width: scroller.availableWidth
@@ -154,7 +179,7 @@ Dialog {
 
             PrefRow {
                 label: qsTr("Sort Folders Before Files")
-                Switch {
+                PrefSwitch {
                     id: foldersFirstSwitch
                     onToggled: Settings.sortFoldersFirst = checked
                 }
@@ -162,17 +187,16 @@ Dialog {
 
             PrefRow {
                 label: qsTr("Action to Open Items")
-                ComboBox {
+                PrefComboBox {
                     id: clickCombo
                     model: [qsTr("Double-Click"), qsTr("Single-Click")]
-                    implicitWidth: 170
                     onActivated: Settings.clickPolicy = currentIndex === 1 ? "single" : "double"
                 }
             }
 
             PrefRow {
                 label: qsTr("Expandable Folders in List View")
-                Switch {
+                PrefSwitch {
                     id: treeViewSwitch
                     onToggled: Settings.useTreeView = checked
                 }
@@ -185,7 +209,7 @@ Dialog {
 
             PrefRow {
                 label: qsTr("Create Link")
-                Switch {
+                PrefSwitch {
                     id: createLinkSwitch
                     onToggled: Settings.showCreateLink = checked
                 }
@@ -193,7 +217,7 @@ Dialog {
 
             PrefRow {
                 label: qsTr("Delete Permanently")
-                Switch {
+                PrefSwitch {
                     id: deletePermanentlySwitch
                     onToggled: Settings.showDeletePermanently = checked
                 }
@@ -206,30 +230,27 @@ Dialog {
 
             PrefRow {
                 label: qsTr("Search in Subfolders")
-                ComboBox {
+                PrefComboBox {
                     id: searchCombo
                     model: root.policyLabels
-                    implicitWidth: 190
                     onActivated: Settings.searchInSubfolders = root.policyValues[currentIndex]
                 }
             }
 
             PrefRow {
                 label: qsTr("Show Thumbnails")
-                ComboBox {
+                PrefComboBox {
                     id: thumbnailsCombo
                     model: root.policyLabels
-                    implicitWidth: 190
                     onActivated: Settings.showThumbnails = root.policyValues[currentIndex]
                 }
             }
 
             PrefRow {
                 label: qsTr("Count Number of Files in Folders")
-                ComboBox {
+                PrefComboBox {
                     id: itemCountsCombo
                     model: root.policyLabels
-                    implicitWidth: 190
                     onActivated: Settings.showDirectoryItemCounts = root.policyValues[currentIndex]
                 }
             }
@@ -241,30 +262,27 @@ Dialog {
 
             PrefRow {
                 label: qsTr("First")
-                ComboBox {
+                PrefComboBox {
                     id: captionFirst
                     model: root.captionLabels
-                    implicitWidth: 170
                     onActivated: root.applyCaptions()
                 }
             }
 
             PrefRow {
                 label: qsTr("Second")
-                ComboBox {
+                PrefComboBox {
                     id: captionSecond
                     model: root.captionLabels
-                    implicitWidth: 170
                     onActivated: root.applyCaptions()
                 }
             }
 
             PrefRow {
                 label: qsTr("Third")
-                ComboBox {
+                PrefComboBox {
                     id: captionThird
                     model: root.captionLabels
-                    implicitWidth: 170
                     onActivated: root.applyCaptions()
                 }
             }
@@ -291,13 +309,16 @@ Dialog {
                         width: parent.width
                         text: qsTr("Simple")
                         font.pixelSize: 13
+                        leftPadding: 14
+                        rightPadding: 14
+                        topPadding: 10
                         bottomPadding: dateSimpleExample.implicitHeight + 10
                         onToggled: if (checked) Settings.dateTimeFormat = "simple"
 
                         Text {
                             textFormat: Text.PlainText
                             id: dateSimpleExample
-                            x: parent.indicator.width + parent.spacing + 6
+                            x: parent.leftPadding + parent.indicator.width + parent.spacing
                             y: parent.height - height - 4
                             text: qsTr("Examples: “Today, 12:33”, “3 days ago”")
                             color: Colors.textDim
@@ -310,13 +331,16 @@ Dialog {
                         width: parent.width
                         text: qsTr("Detailed")
                         font.pixelSize: 13
+                        leftPadding: 14
+                        rightPadding: 14
+                        topPadding: 10
                         bottomPadding: dateDetailedExample.implicitHeight + 10
                         onToggled: if (checked) Settings.dateTimeFormat = "detailed"
 
                         Text {
                             textFormat: Text.PlainText
                             id: dateDetailedExample
-                            x: parent.indicator.width + parent.spacing + 6
+                            x: parent.leftPadding + parent.indicator.width + parent.spacing
                             y: parent.height - height - 4
                             text: qsTr("Examples: “08/08/2026 12:33”, “05/08/2026 12:33”")
                             color: Colors.textDim
@@ -346,7 +370,9 @@ Dialog {
                     from: 0.5
                     to: 1.0
                     stepSize: 0.01
-                    implicitWidth: 170
+                    implicitWidth: root.controlWidth
+                    leftPadding: 0
+                    rightPadding: 0
                     onMoved: Settings.backgroundOpacity = value
                 }
             }
