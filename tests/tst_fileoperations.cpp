@@ -280,6 +280,7 @@ void TestFileOperations::undoOfRestoreTrashesAgain()
     QVERIFY(settle(ops));
     ops.restoreFromTrash({ path });
     QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
     QVERIFY(QFileInfo::exists(path));
 
     ops.undo();
@@ -290,6 +291,7 @@ void TestFileOperations::undoOfRestoreTrashesAgain()
     // Leave nothing of ours in the real trash.
     ops.restoreFromTrash({ path });
     QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
     QVERIFY(QFileInfo::exists(path));
 }
 

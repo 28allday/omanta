@@ -29,6 +29,11 @@ GMountOperation *Mounter::createOperation()
                               delete static_cast<QPointer<Mounter> *>(data);
                           },
                           GConnectFlags(0));
+    auto *questionGuard = new QPointer<Mounter>(this);
+    g_signal_connect_data(operation, "ask-question", G_CALLBACK(&Mounter::onAskQuestion), questionGuard,
+                          [](gpointer data, GClosure *) {
+                              delete static_cast<QPointer<Mounter> *>(data);
+                          }, GConnectFlags(0));
     return operation;
 }
 
@@ -36,6 +41,9 @@ void Mounter::onAskPassword(GMountOperation *operation, const char *message,
                             const char *defaultUser, const char *defaultDomain,
                             GAskPasswordFlags flags, gpointer data)
 {
+    // GMountOperation's default handler schedules an UNHANDLED reply in idle.
+    // Our asynchronous dialog owns the answer; do not let that handler race it.
+    g_signal_stop_emission_by_name(operation, "ask-password");
     auto *guard = static_cast<QPointer<Mounter> *>(data);
     Mounter *self = guard->data();
     if (!self) {
@@ -61,10 +69,40 @@ void Mounter::onAskPassword(GMountOperation *operation, const char *message,
                              (flags & G_ASK_PASSWORD_ANONYMOUS_SUPPORTED) != 0);
 }
 
+void Mounter::onAskQuestion(GMountOperation *operation, const char *message,
+                             const char *const *choices, gpointer data)
+{
+    g_signal_stop_emission_by_name(operation, "ask-question");
+    auto *guard = static_cast<QPointer<Mounter> *>(data);
+    Mounter *self = guard->data();
+    if (!self || self->m_pending || !choices || !choices[0]) {
+        g_mount_operation_reply(operation, G_MOUNT_OPERATION_ABORTED);
+        return;
+    }
+    QStringList options;
+    for (int i = 0; choices[i]; ++i)
+        options << QString::fromUtf8(choices[i]);
+    self->m_pending = G_MOUNT_OPERATION(g_object_ref(operation));
+    self->m_questionChoices = options.size();
+    Q_EMIT self->askQuestion(QString::fromUtf8(message ? message : ""), options);
+}
+
+void Mounter::answerQuestion(int choice)
+{
+    if (!m_pending || choice < 0 || choice >= m_questionChoices)
+        return;
+    g_mount_operation_set_choice(m_pending, choice);
+    GMountOperation *pending = m_pending;
+    m_pending = nullptr;
+    m_questionChoices = 0;
+    g_mount_operation_reply(pending, G_MOUNT_OPERATION_HANDLED);
+    g_object_unref(pending);
+}
+
 void Mounter::providePassword(const QString &username, const QString &domain,
                               const QString &password, bool anonymous, bool remember)
 {
-    if (!m_pending)
+    if (!m_pending || m_questionChoices != 0)
         return;
 
     if (anonymous) {
@@ -79,16 +117,21 @@ void Mounter::providePassword(const QString &username, const QString &domain,
                                                                 : G_PASSWORD_SAVE_NEVER);
     }
 
-    g_mount_operation_reply(m_pending, G_MOUNT_OPERATION_HANDLED);
-    g_clear_object(&m_pending);
+    GMountOperation *pending = m_pending;
+    m_pending = nullptr;
+    g_mount_operation_reply(pending, G_MOUNT_OPERATION_HANDLED);
+    g_object_unref(pending);
 }
 
 void Mounter::cancelPassword()
 {
     if (!m_pending)
         return;
-    g_mount_operation_reply(m_pending, G_MOUNT_OPERATION_ABORTED);
-    g_clear_object(&m_pending);
+    GMountOperation *pending = m_pending;
+    m_pending = nullptr;
+    m_questionChoices = 0;
+    g_mount_operation_reply(pending, G_MOUNT_OPERATION_ABORTED);
+    g_object_unref(pending);
 }
 
 void Mounter::mountLocation(const QString &location)

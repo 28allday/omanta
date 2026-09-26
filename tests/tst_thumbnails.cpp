@@ -222,10 +222,10 @@ void TestThumbnails::canThumbnailRespectsTypeAndSize()
 
     // A video over the cap still thumbnails — the external thumbnailer reads
     // frames, not the whole file (Nautilus's rule; a 4GB recording previews).
-    // The box's registry has a video thumbnailer — registryFindsVideoThumbnailers
-    // pins that separately.
-    QVERIFY(thumbnails.canThumbnail(QStringLiteral("video/mp4"),
-                                    thumbnails.maximumFileSize() + 1));
+    // External thumbnailers are optional; a minimal installation may have none.
+    QCOMPARE(thumbnails.canThumbnail(QStringLiteral("video/mp4"),
+                                      thumbnails.maximumFileSize() + 1),
+             ThumbnailCache::canHandle(QStringLiteral("video/mp4")));
 
     thumbnails.setEnabled(false);
     QVERIFY(!thumbnails.canThumbnail(QStringLiteral("image/jpeg"), 1000));

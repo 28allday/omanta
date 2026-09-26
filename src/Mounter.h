@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
 #include <QtQmlIntegration>
 
 #include <gio/gio.h>
@@ -14,6 +15,8 @@
 //
 // GMountOperation's ask-password becomes the askPassword signal; the
 // credential dialog answers through providePassword()/cancelPassword().
+// Server verification questions use askQuestion/answerQuestion; cancellation
+// also goes through cancelPassword and never selects a trust decision.
 // gvfs re-asks on a wrong password, so the dialog may fire several times
 // for one mount.
 class Mounter : public QObject
@@ -34,6 +37,7 @@ public:
     Q_INVOKABLE void providePassword(const QString &username, const QString &domain,
                                      const QString &password, bool anonymous, bool remember);
     Q_INVOKABLE void cancelPassword();
+    Q_INVOKABLE void answerQuestion(int choice);
 
     // A fresh operation wired to this Mounter's dialog signals, for callers
     // that run their own mount calls (PlacesModel). Caller owns the ref.
@@ -42,6 +46,7 @@ public:
 Q_SIGNALS:
     void mounted(const QString &location);
     void mountFailed(const QString &location, const QString &message);
+    void askQuestion(const QString &message, const QStringList &choices);
     void askPassword(const QString &message, const QString &defaultUser,
                      const QString &defaultDomain, bool needsUsername, bool needsDomain,
                      bool needsPassword, bool canAnonymous);
@@ -55,8 +60,11 @@ private:
     static void onAskPassword(GMountOperation *operation, const char *message,
                               const char *defaultUser, const char *defaultDomain,
                               GAskPasswordFlags flags, gpointer data);
+    static void onAskQuestion(GMountOperation *operation, const char *message,
+                              const char *const *choices, gpointer data);
     static void onMountReady(GObject *source, GAsyncResult *res, gpointer data);
 
     // The operation currently waiting on the dialog, if any.
     GMountOperation *m_pending = nullptr;
+    int m_questionChoices = 0;
 };

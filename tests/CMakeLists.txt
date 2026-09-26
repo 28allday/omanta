@@ -141,3 +141,15 @@ set_tests_properties(tst_qmlviews PROPERTIES TIMEOUT 60
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 add_test(NAME tst_dropbox_helper COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tst_dropbox_helper.sh
     ${CMAKE_SOURCE_DIR}/packaging/bin/omanta-dropbox-link)
+
+omanta_test(tst_faultrecovery
+    ${CMAKE_SOURCE_DIR}/src/Location.cpp
+    ${CMAKE_SOURCE_DIR}/src/FileOperations.cpp
+    ${CMAKE_SOURCE_DIR}/src/FileOperationWorker.cpp
+    ${CMAKE_SOURCE_DIR}/src/ArchiveEngine.cpp
+)
+
+omanta_test(tst_mounter
+    ${CMAKE_SOURCE_DIR}/src/Mounter.cpp
+    ${CMAKE_SOURCE_DIR}/src/Location.cpp
+)

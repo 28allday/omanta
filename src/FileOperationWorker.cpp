@@ -5,6 +5,7 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QSet>
+#include <QUuid>
 
 namespace {
 
@@ -123,6 +124,45 @@ void onCopyProgress(goffset current, goffset, gpointer data)
     ctx->throttle->restart();
     Q_EMIT ctx->worker->progressed(ctx->id, ctx->doneBefore + qint64(current), ctx->total,
                                    ctx->currentName);
+}
+
+// Finish the payload before touching its final name. A failed/cancelled copy
+// must not publish a truncated file or destroy an existing destination.
+bool copyStaged(GFile *source, GFile *destination, bool replace, GCancellable *cancel,
+                GFileProgressCallback progress, gpointer progressData, GError **error)
+{
+    GFile *parent = g_file_get_parent(destination);
+    if (!parent) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "Destination has no parent");
+        return false;
+    }
+    const QByteArray name = (QStringLiteral(".omanta-copy-")
+        + QUuid::createUuid().toString(QUuid::WithoutBraces)).toUtf8();
+    GFile *staging = g_file_get_child(parent, name.constData());
+    g_object_unref(parent);
+    if (!g_file_make_directory(staging, cancel, error)) {
+        g_object_unref(staging);
+        return false; // never clean a path we did not create
+    }
+    GFile *payload = g_file_get_child(staging, "payload");
+    bool ok = setDirectoryMode(staging, 0700, cancel, error);
+    if (ok) {
+        const auto flags = GFileCopyFlags(G_FILE_COPY_ALL_METADATA | G_FILE_COPY_NOFOLLOW_SYMLINKS);
+        ok = g_file_copy(source, payload, flags, cancel, progress, progressData, error);
+    }
+    if (ok) {
+        const auto flags = GFileCopyFlags(G_FILE_COPY_NOFOLLOW_SYMLINKS | G_FILE_COPY_NO_FALLBACK_FOR_MOVE
+            | (replace ? G_FILE_COPY_OVERWRITE : 0));
+        ok = g_file_move(payload, destination, flags, cancel, nullptr, nullptr, error);
+    }
+    // Cancellation must not cancel cleanup. These are individual paths in
+    // our exclusive directory, never a recursive delete of the destination.
+    if (!ok)
+        g_file_delete(payload, nullptr, nullptr);
+    g_file_delete(staging, nullptr, nullptr);
+    g_object_unref(payload);
+    g_object_unref(staging);
+    return ok;
 }
 
 } // namespace
@@ -518,7 +558,7 @@ bool FileOperationWorker::doRestore(const FileOperationRequest &request,
     QStringList wanted = request.sources;
     bool ok = true;
 
-    while (GFileInfo *info = g_file_enumerator_next_file(entries, m_cancellable, nullptr)) {
+    while (GFileInfo *info = g_file_enumerator_next_file(entries, m_cancellable, &gerror)) {
         const char *orig = g_file_info_get_attribute_byte_string(info,
                                                                  G_FILE_ATTRIBUTE_TRASH_ORIG_PATH);
         const QString original = QString::fromUtf8(orig ? orig : "");
@@ -548,7 +588,20 @@ bool FileOperationWorker::doRestore(const FileOperationRequest &request,
             break;
     }
 
+    if (gerror) {
+        *error = messageOf(gerror, "Could not read the trash");
+        g_clear_error(&gerror);
+        ok = false;
+    }
     g_object_unref(entries);
+    // With no Trash monitor, GVfs retains its directory snapshot after a
+    // restore. Refresh it before another trash operation can reuse the same
+    // basename; otherwise that new entry can be absent from trash:///.
+    if (!result.produced.isEmpty()) {
+        GFileInfo *refreshed = g_file_query_info(trash, G_FILE_ATTRIBUTE_TRASH_ITEM_COUNT,
+            G_FILE_QUERY_INFO_NONE, m_cancellable, nullptr);
+        g_clear_object(&refreshed);
+    }
     g_object_unref(trash);
 
     if (ok && !wanted.isEmpty()) {
@@ -913,10 +966,8 @@ bool FileOperationWorker::doTransfer(const FileOperationRequest &request, bool r
         }
         const QString currentName = Location::displayName(entry.source);
         ProgressContext ctx{this, id, done, totalBytes, currentName, &throttle};
-        const auto flags = GFileCopyFlags(G_FILE_COPY_ALL_METADATA | G_FILE_COPY_NOFOLLOW_SYMLINKS
-            | (request.policy == ConflictPolicy::Replace ? G_FILE_COPY_OVERWRITE : 0));
-        if (!g_file_copy(item.source, item.destination, flags, m_cancellable,
-                         onCopyProgress, &ctx, &gerror)) {
+        if (!copyStaged(item.source, item.destination, request.policy == ConflictPolicy::Replace,
+                        m_cancellable, onCopyProgress, &ctx, &gerror)) {
             if (g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_EXISTS)
                 && request.policy == ConflictPolicy::Skip) {
                 result.skipped << entry.source;

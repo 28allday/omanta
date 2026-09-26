@@ -1227,9 +1227,52 @@ Window {
                 root.currentTab.goBack();
             }
         }
+        onAskQuestion: (message, choices) => {
+            mountQuestion.message = message;
+            mountQuestion.choices = choices;
+            mountQuestion.open();
+        }
         onAskPassword: (message, defaultUser, defaultDomain, needsUsername, needsDomain, needsPassword, canAnonymous) => {
             credentialDialog.ask(message, defaultUser, defaultDomain,
                                  needsUsername, needsDomain, needsPassword, canAnonymous);
+        }
+    }
+
+    Dialog {
+        id: mountQuestion
+        property string message: ""
+        property var choices: []
+        title: qsTr("Server verification")
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(500, root.width - 32)
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        standardButtons: Dialog.Cancel
+        onRejected: windowMounter.cancelPassword()
+        onClosed: root.returnFocusToView()
+        Column {
+            width: parent.width
+            spacing: 12
+            Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: mountQuestion.message
+                wrapMode: Text.Wrap
+                color: Colors.text
+            }
+            Repeater {
+                model: mountQuestion.choices
+                Button {
+                    required property int index
+                    required property string modelData
+                    width: parent.width
+                    text: modelData
+                    onClicked: {
+                        windowMounter.answerQuestion(index);
+                        mountQuestion.close();
+                    }
+                }
+            }
         }
     }
 

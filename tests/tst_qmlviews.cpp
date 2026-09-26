@@ -2,6 +2,7 @@
 #include "DirectoryModel.h"
 #include "FileOperations.h"
 #include "IconImageProvider.h"
+#include "Mounter.h"
 #include "Platform.h"
 #include "ServerStore.h"
 #include "Settings.h"
@@ -17,6 +18,7 @@
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
 #include <QSignalSpy>
+#include <QScopeGuard>
 #include <QStandardPaths>
 #include <QStyleHints>
 #include <QTest>
@@ -292,6 +294,41 @@ static void checkTrashFallback(QQmlApplicationEngine &engine, QObject *window, Q
     QVERIFY(QFileInfo::exists(copying));
 }
 
+static void checkMountQuestion(QQuickWindow *window)
+{
+    auto *mounter = window->findChild<Mounter *>();
+    QVERIFY(mounter);
+    GMountOperation *operation = mounter->createOperation();
+    int reply = -1;
+    const auto cleanup = qScopeGuard([&] {
+        g_signal_handlers_disconnect_by_data(operation, &reply);
+        g_object_unref(operation);
+    });
+    g_signal_connect(operation, "reply", G_CALLBACK(+[](GMountOperation *, GMountOperationResult result,
+                                                        gpointer data) {
+        *static_cast<int *>(data) = int(result);
+    }), &reply);
+    const char *choices[] = {"Reject test host", "Trust test host", nullptr};
+    g_signal_emit_by_name(operation, "ask-question", "Verify <untrusted> host fingerprint", choices);
+    QTRY_VERIFY(findItem(window->contentItem(), "text", QString("Trust test host")));
+    auto *button = findItem(window->contentItem(), "text", QString("Trust test host"));
+    QTRY_VERIFY(button->isVisible());
+    QTest::qWait(20);
+    QCOMPARE(reply, -1); // no trust decision until the user acts
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_COMPARE(reply, int(G_MOUNT_OPERATION_ABORTED));
+    QTRY_VERIFY(!button->isVisible());
+    reply = -1;
+    g_signal_emit_by_name(operation, "ask-question", "Verify <untrusted> host fingerprint", choices);
+    QTRY_VERIFY(findItem(window->contentItem(), "text", QString("Trust test host")));
+    button = findItem(window->contentItem(), "text", QString("Trust test host"));
+    QTRY_VERIFY(button->isVisible());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+        button->mapToScene(QPointF(button->width() / 2, button->height() / 2)).toPoint());
+    QTRY_COMPARE(reply, int(G_MOUNT_OPERATION_HANDLED));
+    QCOMPARE(g_mount_operation_get_choice(operation), 1);
+}
+
 void TestQmlViews::selectionAndVirtualDelegates()
 {
     QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
@@ -385,6 +422,9 @@ void TestQmlViews::selectionAndVirtualDelegates()
         QTRY_VERIFY(findFileRow(tab, server));
     }
     tab->setProperty("searchQuery", "");
+    checkMountQuestion(qobject_cast<QQuickWindow *>(window));
+    if (QTest::currentTestFailed())
+        return;
     checkTrashFallback(engine, window, tab);
     if (QTest::currentTestFailed())
         return;

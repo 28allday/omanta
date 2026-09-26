@@ -82,9 +82,10 @@ void TestFts::initTestCase()
 {
     GFile *store = g_file_new_for_path(m_storeDir.path().toUtf8().constData());
     GError *error = nullptr;
+    GFile *ontology = tracker_sparql_get_ontology_nepomuk();
     m_conn = tracker_sparql_connection_new(TRACKER_SPARQL_CONNECTION_FLAGS_NONE,
-                                           store, tracker_sparql_get_ontology_nepomuk(),
-                                           nullptr, &error);
+                                           store, ontology, nullptr, &error);
+    g_object_unref(ontology);
     g_object_unref(store);
     QVERIFY2(m_conn, error ? error->message : "");
     SearchModel::setConnectionForTesting(m_conn);
