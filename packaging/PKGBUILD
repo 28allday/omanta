@@ -11,7 +11,7 @@
 # runtime claims the name only when free, so both coexist until cutover.
 
 pkgname=omanta
-pkgver=0.1.3
+pkgver=0.1.4
 pkgrel=1
 pkgdesc="Native file manager for Omarchy (Qt Quick + GIO)"
 arch=('x86_64')
@@ -31,7 +31,7 @@ sha256sums=('SKIP')
 
 build() {
     # Tests off: the public tree carries them, but a package build has no
-    # business compiling 17 test binaries, and there is no check().
+    # business compiling the test binaries, and there is no check().
     cmake -S "$pkgname" -B build -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr \
