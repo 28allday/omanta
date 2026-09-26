@@ -327,6 +327,31 @@ static void checkMountQuestion(QQuickWindow *window)
         button->mapToScene(QPointF(button->width() / 2, button->height() / 2)).toPoint());
     QTRY_COMPARE(reply, int(G_MOUNT_OPERATION_HANDLED));
     QCOMPARE(g_mount_operation_get_choice(operation), 1);
+    QTRY_VERIFY(!button->isVisible());
+
+    reply = -1;
+    g_signal_emit_by_name(operation, "ask-question", "Device disappeared", choices);
+    QTRY_VERIFY(findItem(window->contentItem(), "text", QString("Trust test host")));
+    button = findItem(window->contentItem(), "text", QString("Trust test host"));
+    QTRY_VERIFY(button->isVisible());
+    g_signal_emit_by_name(operation, "aborted");
+    QTRY_VERIFY(!button->isVisible());
+    QCOMPARE(reply, -1);
+
+    g_signal_emit_by_name(operation, "ask-password", "Password", "user", "", G_ASK_PASSWORD_NEED_PASSWORD);
+    auto *password = findItem(window->contentItem(), "placeholderText", QString("Password"));
+    QVERIFY(password);
+    QTRY_VERIFY(password->isVisible());
+    password->setProperty("text", "temporary-secret");
+    g_signal_emit_by_name(operation, "aborted");
+    QTRY_VERIFY(!password->isVisible());
+    QCOMPARE(password->property("text").toString(), QString());
+    QCOMPARE(reply, -1);
+    // Both aborts release the state, allowing the next real prompt to work.
+    g_signal_emit_by_name(operation, "ask-password", "Password", "user", "", G_ASK_PASSWORD_NEED_PASSWORD);
+    QTRY_VERIFY(password->isVisible());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_COMPARE(reply, int(G_MOUNT_OPERATION_ABORTED));
 }
 
 void TestQmlViews::selectionAndVirtualDelegates()

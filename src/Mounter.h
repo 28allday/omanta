@@ -46,6 +46,7 @@ public:
 Q_SIGNALS:
     void mounted(const QString &location);
     void mountFailed(const QString &location, const QString &message);
+    void promptAborted();
     void askQuestion(const QString &message, const QStringList &choices);
     void askPassword(const QString &message, const QString &defaultUser,
                      const QString &defaultDomain, bool needsUsername, bool needsDomain,
@@ -62,6 +63,7 @@ private:
                               GAskPasswordFlags flags, gpointer data);
     static void onAskQuestion(GMountOperation *operation, const char *message,
                               const char *const *choices, gpointer data);
+    static void onAborted(GMountOperation *operation, gpointer data);
     static void onMountReady(GObject *source, GAsyncResult *res, gpointer data);
 
     // The operation currently waiting on the dialog, if any.

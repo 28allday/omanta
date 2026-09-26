@@ -34,7 +34,25 @@ GMountOperation *Mounter::createOperation()
                           [](gpointer data, GClosure *) {
                               delete static_cast<QPointer<Mounter> *>(data);
                           }, GConnectFlags(0));
+    auto *abortGuard = new QPointer<Mounter>(this);
+    g_signal_connect_data(operation, "aborted", G_CALLBACK(&Mounter::onAborted), abortGuard,
+                          [](gpointer data, GClosure *) {
+                              delete static_cast<QPointer<Mounter> *>(data);
+                          }, GConnectFlags(0));
     return operation;
+}
+
+void Mounter::onAborted(GMountOperation *operation, gpointer data)
+{
+    auto *guard = static_cast<QPointer<Mounter> *>(data);
+    Mounter *self = guard->data();
+    if (!self || self->m_pending != operation)
+        return;
+    // The backend has already aborted. Release only its matching prompt,
+    // without replying again or interfering with another mount's dialog.
+    self->m_questionChoices = 0;
+    g_clear_object(&self->m_pending);
+    Q_EMIT self->promptAborted();
 }
 
 void Mounter::onAskPassword(GMountOperation *operation, const char *message,

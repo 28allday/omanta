@@ -36,6 +36,9 @@ private Q_SLOTS:
     void copyPreservesDirectoryModes();
     void moveSkipLeavesSkippedOriginals();
     void replacementDoesNotOfferDestructiveUndo();
+    void replacementRefusesTypeChanges_data();
+    void replacementRefusesTypeChanges();
+    void folderCollisionAfterPlanningPreservesTheFile();
     void cancelBeforeDispatchIsHonoured();
     void batchExtractionResumesAtEachPassword();
 
@@ -1065,6 +1068,86 @@ void TestFileOperations::moveSkipLeavesSkippedOriginals()
     QVERIFY(settle(ops));
     QCOMPARE(read(tree.filePath("src/folder/move")).size(), 13);
     QCOMPARE(read(tree.filePath("dst/folder/keep")).size(), 37);
+}
+
+void TestFileOperations::replacementRefusesTypeChanges_data()
+{
+    QTest::addColumn<bool>("move");
+    QTest::addColumn<bool>("sourceDirectory");
+    QTest::addColumn<bool>("nested");
+    for (bool move : {false, true}) {
+        for (bool sourceDirectory : {false, true}) {
+            for (bool nested : {false, true}) {
+                const QByteArray name = QByteArray(move ? "move" : "copy")
+                    + (sourceDirectory ? "-folder-on-file" : "-file-on-folder")
+                    + (nested ? "-nested" : "-root");
+                QTest::newRow(name.constData()) << move << sourceDirectory << nested;
+            }
+        }
+    }
+}
+
+void TestFileOperations::replacementRefusesTypeChanges()
+{
+    QFETCH(bool, move);
+    QFETCH(bool, sourceDirectory);
+    QFETCH(bool, nested);
+    TempTree tree;
+    const QString src = nested ? "src/item/collision" : "src/item";
+    const QString dst = nested ? "dst/item/collision" : "dst/item";
+    const QString original = tree.writeFile(sourceDirectory ? src + "/payload" : src, 17);
+    const QString previous = tree.writeFile(sourceDirectory ? dst : dst + "/payload", 29);
+    FileOperations ops;
+    if (move)
+        ops.move({tree.filePath("src/item")}, tree.filePath("dst"), FileOperations::Replace);
+    else
+        ops.copy({tree.filePath("src/item")}, tree.filePath("dst"), FileOperations::Replace);
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().contains("files and folders cannot replace each other"), qPrintable(ops.lastError()));
+    QCOMPARE(read(original), QString(17, 'x'));
+    QCOMPARE(read(previous), QString(29, 'x'));
+    QCOMPARE(QFileInfo(tree.filePath(src)).isDir(), sourceDirectory);
+    QCOMPARE(QFileInfo(tree.filePath(dst)).isDir(), !sourceDirectory);
+    QVERIFY(!ops.canUndo());
+}
+
+void TestFileOperations::folderCollisionAfterPlanningPreservesTheFile()
+{
+    TempTree tree;
+    const QString first = tree.writeFile("first", 11);
+    const QString original = tree.writeFile("folder/child", 17);
+    tree.makeDir("dst");
+    FileOperationWorker worker;
+    QSignalSpy failed(&worker, &FileOperationWorker::failed);
+    bool raced = false;
+    connect(&worker, &FileOperationWorker::progressed, &worker, [&] {
+        if (!raced) {
+            raced = true;
+            tree.writeFile("dst/folder", 29);
+        }
+    });
+    FileOperationRequest request;
+    request.kind = FileOperationRequest::Copy;
+    request.sources = {first, tree.filePath("folder")};
+    request.destination = tree.filePath("dst");
+    request.policy = ConflictPolicy::Replace;
+    worker.run(request, 1);
+    QVERIFY(raced);
+    QCOMPARE(failed.size(), 1);
+    QCOMPARE(read(tree.filePath("dst/folder")), QString(29, 'x'));
+    QCOMPARE(read(original), QString(17, 'x'));
+    const auto result = failed.first().at(2).value<FileOperationResult>();
+    QVERIFY(result.undoable);
+    QCOMPARE(result.transfers.size(), 1);
+    QCOMPARE(result.transfers.first().source, first);
+    worker.prepare();
+    FileOperationRequest undo;
+    undo.kind = FileOperationRequest::UndoTransfer;
+    undo.transfers = result.transfers;
+    worker.run(undo, 2);
+    QCOMPARE(failed.size(), 1);
+    QVERIFY(!QFileInfo::exists(tree.filePath("dst/first")));
+    QCOMPARE(read(tree.filePath("dst/folder")), QString(29, 'x'));
 }
 
 void TestFileOperations::replacementDoesNotOfferDestructiveUndo()

@@ -32,13 +32,21 @@ void TestFaultRecovery::transferFailure_data()
     QTest::addColumn<bool>("move");
     QTest::addColumn<bool>("replace");
     QTest::addColumn<bool>("readOnly");
+    QTest::addColumn<bool>("folder");
     for (bool move : {false, true}) {
         for (bool replace : {false, true}) {
             for (bool readOnly : {false, true}) {
                 const QByteArray name = QByteArray(move ? "move" : "copy")
                     + (replace ? "-replace" : "-new") + (readOnly ? "-readonly" : "-full");
-                QTest::newRow(name.constData()) << move << replace << readOnly;
+                QTest::newRow(name.constData()) << move << replace << readOnly << false;
             }
+        }
+    }
+    for (bool move : {false, true}) {
+        for (bool readOnly : {false, true}) {
+            const QByteArray name = QByteArray(move ? "move" : "copy")
+                + "-folder-replaces-file" + (readOnly ? "-readonly" : "-full");
+            QTest::newRow(name.constData()) << move << true << readOnly << true;
         }
     }
 }
@@ -73,8 +81,9 @@ void TestFaultRecovery::transferFailure()
     QFETCH(bool, move);
     QFETCH(bool, replace);
     QFETCH(bool, readOnly);
+    QFETCH(bool, folder);
     TempTree source;
-    const QString original = source.writeFile("large", 4 * 1024 * 1024);
+    const QString original = source.writeFile(folder ? "large/child" : "large", 4 * 1024 * 1024);
     const QByteArray originalHash = digest(original);
     QVERIFY(!originalHash.isEmpty());
     const QString target = "/limited/large";
@@ -93,7 +102,7 @@ void TestFaultRecovery::transferFailure()
     QSignalSpy succeeded(&worker, &FileOperationWorker::succeeded);
     FileOperationRequest request;
     request.kind = move ? FileOperationRequest::Move : FileOperationRequest::Copy;
-    request.sources = {original};
+    request.sources = {folder ? source.filePath("large") : original};
     request.destination = "/limited";
     request.policy = replace ? ConflictPolicy::Replace : ConflictPolicy::RenameNew;
     worker.run(request, 1);

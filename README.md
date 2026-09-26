@@ -50,8 +50,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.12/omanta-0.1.12-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.12-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.13/omanta-0.1.13-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.13-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —
@@ -129,7 +129,7 @@ runtime dependencies above.
 The Empty Trash integration test also needs `bubblewrap` and GVfs. It runs
 with a separate filesystem, home directory and D-Bus session; it is skipped
 when those dependencies are unavailable. The full-disk and permission tests
-also require `bubblewrap`. See the [validation report](docs/validation-2026-09-26.md)
+also require `bubblewrap`. See the [validation report](docs/validation-v0.1.13.md)
 for the latest integration checks and their limits.
 
 ## License

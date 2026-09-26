@@ -1227,6 +1227,10 @@ Window {
                 root.currentTab.goBack();
             }
         }
+        onPromptAborted: {
+            credentialDialog.abort();
+            mountQuestion.close();
+        }
         onAskQuestion: (message, choices) => {
             mountQuestion.message = message;
             mountQuestion.choices = choices;

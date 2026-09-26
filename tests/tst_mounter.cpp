@@ -7,6 +7,8 @@ class TestMounter : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void backendAbortAllowsAnotherPrompt_data();
+    void backendAbortAllowsAnotherPrompt();
     void passwordWaitsForAnAnswer();
     void questionRequiresAnExplicitValidChoice();
     void cancellingAbortsTheQuestion();
@@ -31,6 +33,65 @@ struct Reply {
         }), this);
     }
 };
+
+void TestMounter::backendAbortAllowsAnotherPrompt_data()
+{
+    QTest::addColumn<bool>("question");
+    QTest::newRow("password") << false;
+    QTest::newRow("verification") << true;
+}
+
+void TestMounter::backendAbortAllowsAnotherPrompt()
+{
+    QFETCH(bool, question);
+    Mounter mounter;
+    QSignalSpy aborted(&mounter, &Mounter::promptAborted);
+    QSignalSpy passwords(&mounter, &Mounter::askPassword);
+    QSignalSpy questions(&mounter, &Mounter::askQuestion);
+    GMountOperation *first = mounter.createOperation();
+    GMountOperation *second = mounter.createOperation();
+    Reply firstReply, secondReply;
+    const auto cleanup = qScopeGuard([&] {
+        g_signal_handlers_disconnect_by_data(first, &firstReply);
+        g_signal_handlers_disconnect_by_data(second, &secondReply);
+        g_object_unref(first);
+        g_object_unref(second);
+    });
+    firstReply.watch(first);
+    secondReply.watch(second);
+    const auto prompt = [&](GMountOperation *operation) {
+        if (question)
+            ask(operation);
+        else
+            g_signal_emit_by_name(operation, "ask-password", "Password", "user", "", G_ASK_PASSWORD_NEED_PASSWORD);
+    };
+    prompt(first);
+    QCOMPARE(passwords.size() + questions.size(), 1);
+    // An unrelated abort must not dismiss the active prompt.
+    g_signal_emit_by_name(second, "aborted");
+    QCOMPARE(aborted.size(), 0);
+    prompt(second);
+    QCOMPARE(passwords.size() + questions.size(), 1);
+    QCOMPARE(secondReply.result, G_MOUNT_OPERATION_ABORTED);
+    g_signal_emit_by_name(first, "aborted");
+    QCOMPARE(aborted.size(), 1);
+    mounter.providePassword("user", "", "stale", false, false);
+    mounter.answerQuestion(1);
+    QCOMPARE(firstReply.count, 0); // backend abort needs no client reply
+    prompt(second);
+    QCOMPARE(passwords.size() + questions.size(), 2);
+    // A late duplicate abort from the old operation cannot clear the new one.
+    g_signal_emit_by_name(first, "aborted");
+    QCOMPARE(aborted.size(), 1);
+    if (question)
+        mounter.answerQuestion(1);
+    else
+        mounter.providePassword("user", "", "fixture", false, false);
+    QCOMPARE(secondReply.result, G_MOUNT_OPERATION_HANDLED);
+    QCOMPARE(secondReply.count, 2);
+    QTest::qWait(20);
+    QCOMPARE(firstReply.count, 0);
+}
 
 void TestMounter::passwordWaitsForAnAnswer()
 {
@@ -115,6 +176,8 @@ void TestMounter::questionsAfterDestructionAreAborted()
     ask(operation);
     QCOMPARE(reply.count, 1);
     QCOMPARE(reply.result, G_MOUNT_OPERATION_ABORTED);
+    g_signal_emit_by_name(operation, "aborted"); // guarded after window destruction
+    QCOMPARE(reply.count, 1);
 }
 
 QTEST_GUILESS_MAIN(TestMounter)

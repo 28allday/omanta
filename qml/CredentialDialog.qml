@@ -24,6 +24,11 @@ Dialog {
     closePolicy: Popup.CloseOnEscape
     title: qsTr("Authentication required")
 
+    function abort() {
+        passwordField.text = "";
+        close();
+    }
+
     function ask(message, defaultUser, defaultDomain, wantsUsername, wantsDomain, wantsPassword, allowsAnonymous) {
         messageText.text = message;
         needsUsername = wantsUsername;

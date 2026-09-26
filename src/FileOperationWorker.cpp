@@ -757,7 +757,16 @@ bool FileOperationWorker::buildPlan(GFile *source, GFile *destination, ConflictP
         }
         // Two directories with the same name merge, which is what every file
         // manager does and what users expect when dropping a folder onto one.
-        const bool bothDirs = sourceIsDir && isDirectory(target);
+        const bool targetIsDir = isDirectory(target);
+        if (policy == ConflictPolicy::Replace && sourceIsDir != targetIsDir) {
+            // GIO cannot publish a directory over a file atomically across
+            // all backends. Never delete the existing item to make room.
+            *error = QStringLiteral("Cannot replace “%1”: files and folders cannot replace each other. "
+                                    "Rename one of the items first.").arg(pathOf(target));
+            g_object_unref(target);
+            return false;
+        }
+        const bool bothDirs = sourceIsDir && targetIsDir;
         if (!bothDirs) {
             switch (policy) {
             case ConflictPolicy::Skip:
@@ -938,15 +947,13 @@ bool FileOperationWorker::doTransfer(const FileOperationRequest &request, bool r
                 g_object_unref(info);
             }
             if (existed && !isDirectory(item.destination)) {
-                if (request.policy != ConflictPolicy::Replace
-                    || !g_file_delete(item.destination, m_cancellable, &gerror)) {
-                    *error = messageOf(gerror, "Destination is not a folder");
-                    g_clear_error(&gerror);
-                    return fail();
-                }
-                result.undoable = false;
+                // Recheck after planning: another process or an earlier
+                // source in this batch may have occupied the folder's name.
+                *error = QStringLiteral("Cannot replace “%1”: a non-folder item occupies the folder's name. "
+                                        "Rename one of the items first.").arg(entry.destination);
+                return fail();
             }
-            if (!existed || !isDirectory(item.destination)) {
+            if (!existed) {
                 if (!g_file_make_directory(item.destination, m_cancellable, &gerror)) {
                     *error = messageOf(gerror, "Could not create folder");
                     g_clear_error(&gerror);
