@@ -207,6 +207,91 @@ static void checkDragPreviews(QQuickWindow *window, QQuickItem *tab,
     }
 }
 
+
+static void checkLiveSelection(QQuickWindow *window, QQuickItem *tab, Settings *settings)
+{
+    for (const QString &mode : {QStringLiteral("list"), QStringLiteral("icon"), QStringLiteral("tree")}) {
+        TempTree tree;
+        tree.writeFile("a");
+        tree.writeFile("__proto__");
+        tree.writeFile("z");
+        settings->setUseTreeView(mode == "tree");
+        tab->setProperty("viewMode", mode == "icon" ? "icon" : "list");
+        tab->setProperty("path", tree.path());
+        QTRY_COMPARE(window->property("visibleCount").toInt(), 3);
+        QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, "a")));
+        tab->setProperty("currentIndex", tab->property("anchorIndex"));
+        const auto currentName = [&] {
+            auto *files = tab->property("files").value<QObject *>();
+            QVariant value;
+            QMetaObject::invokeMethod(files, "valueAt", Q_RETURN_ARG(QVariant, value),
+                Q_ARG(int, tab->property("currentIndex").toInt()), Q_ARG(QString, QString("name")));
+            return value.toString();
+        };
+        QCOMPARE(currentName(), QStringLiteral("a"));
+        tab->setProperty("sortDescending", true);
+        QTRY_COMPARE(currentName(), QStringLiteral("a"));
+        tree.writeFile("b");
+        QTRY_COMPARE(window->property("visibleCount").toInt(), 4);
+        QCOMPARE(currentName(), QStringLiteral("a"));
+        QVERIFY(QFile::remove(tree.filePath("z")));
+        QTRY_COMPARE(window->property("visibleCount").toInt(), 3);
+        QCOMPARE(currentName(), QStringLiteral("a"));
+        QCOMPARE(invoke(tab, "selectedPaths").toStringList(), QStringList{tree.filePath("a")});
+        QVERIFY(QMetaObject::invokeMethod(tab, "toggleSelection", Q_ARG(QVariant, "__proto__")));
+        QCOMPARE(tab->property("selectionCount").toInt(), 2);
+        QVERIFY(QFile::remove(tree.filePath("a")));
+        QTRY_COMPARE(window->property("visibleCount").toInt(), 2);
+        QTRY_COMPARE(tab->property("selectionCount").toInt(), 1);
+        QCOMPARE(tab->property("currentIndex").toInt(), -1);
+        QCOMPARE(invoke(tab, "selectedPaths").toStringList(), QStringList{tree.filePath("__proto__")});
+        QVERIFY(QFile::remove(tree.filePath("__proto__")));
+        QTRY_COMPARE(window->property("visibleCount").toInt(), 1);
+        QTRY_COMPARE(tab->property("selectionCount").toInt(), 0);
+        QCOMPARE(tab->property("anchorIndex").toInt(), -1);
+        QCOMPARE(tab->property("statusText").toString(), QStringLiteral("1 item"));
+        tab->setProperty("sortDescending", false);
+    }
+    settings->setUseTreeView(false);
+}
+
+static void checkTrashFallback(QQmlApplicationEngine &engine, QObject *window, QQuickItem *tab)
+{
+    TempTree tree;
+    const QString selected = tree.writeFile("selected");
+    const QString copying = tree.writeFile("copying");
+    tab->setProperty("path", tree.path());
+    QTRY_COMPARE(window->property("visibleCount").toInt(), 2);
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, "selected")));
+    QObject *dialog = nullptr;
+    for (QObject *child : window->findChildren<QObject *>()) {
+        if (child->property("message").toString() == "These files can't be moved to the trash.")
+            dialog = child;
+    }
+    QVERIFY(dialog);
+    auto *ops = engine.singletonInstance<FileOperations *>("Omanta", "FileOperations");
+    QVERIFY(ops);
+    ops->copy({copying}, "omanta-test-unsupported://host/destination");
+    QTRY_VERIFY(!ops->busy());
+    QVERIFY(!ops->lastError().isEmpty());
+    QVERIFY(!dialog->property("visible").toBool());
+    const QString unsupported = "omanta-test-unsupported://host/original";
+    QObject otherWindow;
+    ops->trash({unsupported}, &otherWindow);
+    QTRY_VERIFY(!ops->busy());
+    QVERIFY(!dialog->property("visible").toBool());
+    ops->trash({unsupported}, window);
+    QTRY_VERIFY(!ops->busy());
+    QTRY_VERIFY(dialog->property("visible").toBool());
+    const QVariant pending = dialog->property("pending");
+    QCOMPARE(pending.metaType() == QMetaType::fromType<QJSValue>()
+        ? pending.value<QJSValue>().toVariant().toStringList() : pending.toStringList(),
+        QStringList{unsupported});
+    QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
+    QVERIFY(QFileInfo::exists(selected));
+    QVERIFY(QFileInfo::exists(copying));
+}
+
 void TestQmlViews::selectionAndVirtualDelegates()
 {
     QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
@@ -299,6 +384,13 @@ void TestQmlViews::selectionAndVirtualDelegates()
         QTRY_VERIFY(window->property("visibleCount").toInt() >= 1);
         QTRY_VERIFY(findFileRow(tab, server));
     }
+    tab->setProperty("searchQuery", "");
+    checkTrashFallback(engine, window, tab);
+    if (QTest::currentTestFailed())
+        return;
+    checkLiveSelection(qobject_cast<QQuickWindow *>(window), tab,
+                       engine.singletonInstance<Settings *>("Omanta", "Settings"));
+
 }
 
 void TestQmlViews::emptyTrashRefreshesOpenViews()
@@ -398,6 +490,8 @@ void TestQmlViews::emptyTrashRefreshesOpenViews()
         QVERIFY2(ops->lastError().isEmpty(), qPrintable(ops->lastError()));
         QTRY_COMPARE(window->property("visibleCount").toInt(), 3);
 
+        QVERIFY(QMetaObject::invokeMethod(tab, "selectAll"));
+        QCOMPARE(tab->property("selectionCount").toInt(), 3);
         QVERIFY(QMetaObject::invokeMethod(confirmation, "open"));
         QTRY_VERIFY(confirmation->property("visible").toBool());
         auto *button = findItem(window->contentItem(), "text", QStringLiteral("Empty Trash"));
@@ -410,6 +504,7 @@ void TestQmlViews::emptyTrashRefreshesOpenViews()
         QTRY_COMPARE(model->count(), 0);
         QTRY_COMPARE(window->property("visibleCount").toInt(), 0);
         QCOMPARE(tab->property("path").toString(), QStringLiteral("trash:///"));
+        QTRY_COMPARE(tab->property("selectionCount").toInt(), 0);
         QCOMPARE(tab->property("statusText").toString(), QStringLiteral("0 items"));
         QCOMPARE(resets.count(), 0);
     }

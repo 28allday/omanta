@@ -4,14 +4,22 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QSet>
+#include <QTemporaryDir>
 
 #include <archive.h>
 #include <archive_entry.h>
 
 #include <limits.h>
+#include <fcntl.h>
+#include <linux/fs.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
+#include <algorithm>
+#include <cerrno>
+#include <cstring>
 
 namespace ArchiveEngine {
 
@@ -140,7 +148,11 @@ bool writeEntry(struct archive *writer, const Source &source, QString *error,
 // to whatever the archive wants to land as.
 QString uniqueTarget(const QString &directory, const QString &name)
 {
-    if (!QFileInfo::exists(QDir(directory).filePath(name)))
+    const auto occupied = [&](const QString &candidate) {
+        const QFileInfo info(QDir(directory).filePath(candidate));
+        return info.exists() || info.isSymLink();
+    };
+    if (!occupied(name))
         return name;
     const int extAt = archiveExtensionOffset(name) >= 0
         ? -1 // archive names never reach here, but stay honest about the API
@@ -149,7 +161,7 @@ QString uniqueTarget(const QString &directory, const QString &name)
     const QString suffix = extAt > 0 ? name.mid(extAt) : QString();
     for (int n = 2; n < 10000; ++n) {
         const QString candidate = QStringLiteral("%1 %2%3").arg(stem).arg(n).arg(suffix);
-        if (!QFileInfo::exists(QDir(directory).filePath(candidate)))
+        if (!occupied(candidate))
             return candidate;
     }
     return name;
@@ -163,6 +175,36 @@ bool safeEntryPath(const QString &path)
         return false;
     const QStringList parts = QDir::cleanPath(path).split(QLatin1Char('/'));
     return !parts.contains(QStringLiteral(".."));
+}
+
+bool publish(const QString &source, const QString &target)
+{
+    // Atomic no-replace, including dangling symlinks at the destination.
+    return syscall(SYS_renameat2, AT_FDCWD, QFile::encodeName(source).constData(),
+                   AT_FDCWD, QFile::encodeName(target).constData(), RENAME_NOREPLACE) == 0;
+}
+
+bool snapshot(const QString &path, CreatedEntry *entry)
+{
+    struct stat st;
+    if (lstat(QFile::encodeName(path).constData(), &st) != 0)
+        return false;
+    *entry = {path, quint64(st.st_dev), quint64(st.st_ino), quint32(st.st_mode),
+              st.st_size, st.st_mtim.tv_sec * qint64(1000000000) + st.st_mtim.tv_nsec,
+              st.st_ctim.tv_sec * qint64(1000000000) + st.st_ctim.tv_nsec,
+              bool(S_ISDIR(st.st_mode))};
+    return true;
+}
+
+bool unchanged(const CreatedEntry &expected)
+{
+    CreatedEntry current;
+    if (!snapshot(expected.path, &current))
+        return false;
+    return expected.device == current.device && expected.inode == current.inode
+        && expected.mode == current.mode
+        && (expected.directory || (expected.size == current.size
+            && expected.modifiedNs == current.modifiedNs && expected.changedNs == current.changedNs));
 }
 
 } // namespace
@@ -216,7 +258,7 @@ bool compress(const QStringList &sources, const QString &archivePath, QString *e
         *error = QStringLiteral("Nothing to compress");
         return false;
     }
-    if (QFileInfo::exists(archivePath)) {
+    if (QFileInfo(archivePath).exists() || QFileInfo(archivePath).isSymLink()) {
         // The dialog validates first, so reaching this means a race — refuse
         // rather than clobber whatever appeared.
         *error = QStringLiteral("“%1” already exists").arg(QFileInfo(archivePath).fileName());
@@ -268,7 +310,14 @@ bool compress(const QStringList &sources, const QString &archivePath, QString *e
         return false;
     }
 
-    if (archive_write_open_filename(writer, archivePath.toLocal8Bit().constData())
+    QTemporaryDir staging(QFileInfo(archivePath).absolutePath() + "/.omanta-compress-XXXXXX");
+    QFile output(staging.filePath(QStringLiteral("archive")));
+    if (!staging.isValid() || !output.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+        *error = QStringLiteral("Could not create the archive");
+        archive_write_free(writer);
+        return false;
+    }
+    if (archive_write_open_fd(writer, output.handle())
         != ARCHIVE_OK) {
         *error = archiveError(writer, "Could not create the archive");
         archive_write_free(writer);
@@ -298,16 +347,24 @@ bool compress(const QStringList &sources, const QString &archivePath, QString *e
         ok = false;
     }
 
-    // A failed or cancelled compression leaves no half-written archive to be
-    // mistaken for a good one later.
-    if (!ok)
-        QFile::remove(archivePath);
+    output.close();
+    if (ok && cancelled()) {
+        *error = QStringLiteral("Cancelled");
+        ok = false;
+    }
+    // Only the private staging directory is cleaned on failure. An output
+    // that appeared while compressing is never overwritten or removed.
+    if (ok && !publish(output.fileName(), archivePath)) {
+        *error = errno == EEXIST ? QStringLiteral("“%1” already exists").arg(QFileInfo(archivePath).fileName())
+                                : QStringLiteral("Could not publish the archive: %1").arg(QString::fromLocal8Bit(strerror(errno)));
+        ok = false;
+    }
     return ok;
 }
 
 bool extract(const QString &archivePath, const QString &destinationDir, QString *produced,
              QString *error, const Cancelled &cancelled, const Progress &progress,
-             const QString &password, bool *needsPassphrase)
+             const QString &password, bool *needsPassphrase, QList<CreatedEntry> *created)
 {
     if (needsPassphrase)
         *needsPassphrase = false;
@@ -344,9 +401,9 @@ bool extract(const QString &archivePath, const QString &destinationDir, QString 
     // Everything lands in a hidden staging directory first: a failed or
     // hostile archive leaves nothing visible behind, and the landing rule can
     // look at what actually came out rather than trusting the entry list.
-    const QString staging = QDir(destinationDir)
-        .filePath(QStringLiteral(".omanta-extract-%1").arg(quintptr(reader), 0, 16));
-    if (!QDir().mkpath(staging)) {
+    QTemporaryDir stagingDir(QDir(destinationDir).filePath(QStringLiteral(".omanta-extract-XXXXXX")));
+    const QString staging = stagingDir.path();
+    if (!stagingDir.isValid()) {
         *error = QStringLiteral("Could not write to “%1”")
             .arg(QFileInfo(destinationDir).fileName());
         archive_read_free(reader);
@@ -361,7 +418,6 @@ bool extract(const QString &archivePath, const QString &destinationDir, QString 
         if (needsPassphrase && message.contains(QStringLiteral("assphrase")))
             *needsPassphrase = true;
         archive_read_free(reader);
-        QDir(staging).removeRecursively();
         return false;
     };
 
@@ -407,7 +463,6 @@ bool extract(const QString &archivePath, const QString &destinationDir, QString 
     const QFileInfoList topLevel = QDir(staging).entryInfoList(
         QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
     if (topLevel.isEmpty()) {
-        QDir(staging).removeRecursively();
         *error = QStringLiteral("The archive is empty");
         return false;
     }
@@ -415,35 +470,108 @@ bool extract(const QString &archivePath, const QString &destinationDir, QString 
     // Nautilus's landing rule: one top-level entry comes out as itself; more
     // than one gets a folder named after the archive. Never overwrite — the
     // target is unique-ified either way.
-    QString finalPath;
-    if (topLevel.size() == 1) {
-        const QString name = uniqueTarget(destinationDir, topLevel.first().fileName());
-        finalPath = QDir(destinationDir).filePath(name);
-        if (!QFile::rename(topLevel.first().absoluteFilePath(), finalPath)) {
-            QDir(staging).removeRecursively();
-            *error = QStringLiteral("Could not move the extracted files into place");
+    const QString source = topLevel.size() == 1 ? topLevel.first().absoluteFilePath() : staging;
+    QList<CreatedEntry> journal;
+    if (created) {
+        CreatedEntry root;
+        if (!snapshot(source, &root)) {
+            *error = QStringLiteral("Could not record extracted files");
             return false;
         }
-    } else {
-        const QString name = uniqueTarget(destinationDir, stem);
-        finalPath = QDir(destinationDir).filePath(name);
-        if (!QDir().mkpath(finalPath)) {
-            QDir(staging).removeRecursively();
-            *error = QStringLiteral("Could not move the extracted files into place");
-            return false;
-        }
-        for (const QFileInfo &item : topLevel) {
-            if (!QFile::rename(item.absoluteFilePath(),
-                               QDir(finalPath).filePath(item.fileName()))) {
-                QDir(staging).removeRecursively();
-                *error = QStringLiteral("Could not move the extracted files into place");
-                return false;
+        journal << root;
+        if (root.directory) {
+            QDirIterator it(source, QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot,
+                            QDirIterator::Subdirectories);
+            while (it.hasNext()) {
+                CreatedEntry entry;
+                if (cancelled() || !snapshot(it.next(), &entry)) {
+                    *error = QStringLiteral("Could not record extracted files");
+                    return false;
+                }
+                journal << entry;
             }
         }
     }
-
-    QDir(staging).removeRecursively();
+    QString finalPath;
+    const QString baseName = topLevel.size() == 1 ? topLevel.first().fileName() : stem;
+    for (int attempt = 0; ; ++attempt) {
+        finalPath = QDir(destinationDir).filePath(uniqueTarget(destinationDir, baseName));
+        if (publish(source, finalPath))
+            break;
+        if (errno != EEXIST || attempt >= 10000) {
+            *error = QStringLiteral("Could not move the extracted files into place");
+            return false;
+        }
+    }
+    if (source == staging)
+        stagingDir.setAutoRemove(false);
+    if (created) {
+        for (CreatedEntry &entry : journal)
+            entry.path = finalPath + entry.path.mid(source.size());
+        // rename updates the root's ctime; descendants retain their snapshot.
+        CreatedEntry root;
+        if (snapshot(finalPath, &root) && root.inode == journal.first().inode
+            && root.device == journal.first().device)
+            journal.first().changedNs = root.changedNs;
+        *created += journal;
+    }
     *produced = finalPath;
+    return true;
+}
+
+bool undoExtraction(const QList<CreatedEntry> &created, QString *error, const Cancelled &cancelled)
+{
+    QSet<QString> owned;
+    for (const CreatedEntry &entry : created)
+        owned.insert(entry.path);
+    const auto conflict = [&](const QString &path) {
+        *error = QStringLiteral("“%1” has changed since extraction; it was left alone").arg(QFileInfo(path).fileName());
+        return false;
+    };
+    for (const CreatedEntry &entry : created) {
+        if (cancelled()) { *error = QStringLiteral("Cancelled"); return false; }
+        if (!unchanged(entry))
+            return conflict(entry.path);
+        if (entry.directory) {
+            const QDir dir(entry.path);
+            for (const QString &name : dir.entryList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot)) {
+                if (!owned.contains(dir.filePath(name)))
+                    return conflict(entry.path);
+            }
+        }
+    }
+    auto ordered = created;
+    std::sort(ordered.begin(), ordered.end(), [](const CreatedEntry &a, const CreatedEntry &b) {
+        return a.path.size() > b.path.size();
+    });
+    QHash<QPair<quint64, quint64>, qint64> unlinkedTimes;
+    for (CreatedEntry entry : ordered) {
+        if (cancelled()) { *error = QStringLiteral("Cancelled"); return false; }
+        const auto identity = qMakePair(entry.device, entry.inode);
+        if (unlinkedTimes.contains(identity))
+            entry.changedNs = unlinkedTimes.value(identity);
+        if (!unchanged(entry))
+            return conflict(entry.path);
+        const QByteArray path = QFile::encodeName(entry.path);
+        // Unlink changes ctime on surviving hardlinks. Hold this inode open
+        // to record our own change, without accepting a replacement by path.
+        const int fd = entry.directory ? -1 : open(path.constData(), O_PATH | O_NOFOLLOW | O_CLOEXEC);
+        struct stat st;
+        if (!entry.directory && (fd < 0 || fstat(fd, &st) != 0
+                || quint64(st.st_dev) != entry.device || quint64(st.st_ino) != entry.inode)) {
+            if (fd >= 0)
+                close(fd);
+            return conflict(entry.path);
+        }
+        const bool removed = (entry.directory ? rmdir(path.constData()) : unlink(path.constData())) == 0;
+        if (fd >= 0) {
+            if (removed && fstat(fd, &st) == 0)
+                unlinkedTimes.insert(identity, st.st_ctim.tv_sec * qint64(1000000000) + st.st_ctim.tv_nsec);
+            close(fd);
+        }
+        if (!removed)
+            return conflict(entry.path); // never recurse into later additions
+    }
     return true;
 }
 

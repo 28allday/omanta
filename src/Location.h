@@ -24,6 +24,8 @@ bool isLocal(const QString &location);
 // Canonical form: cleaned absolute path for anything local (file:// included),
 // GIO's normalized URI for the rest. Empty stays empty.
 QString clean(const QString &location);
+// Passwords belong in GMountOperation/keyring, never navigation or stores.
+QString withoutPassword(const QString &location);
 
 // GFile for a location. Caller owns the reference.
 GFile *make(const QString &location);

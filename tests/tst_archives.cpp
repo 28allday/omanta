@@ -21,6 +21,11 @@ class TestArchives : public QObject
 
 private Q_SLOTS:
     void finalizationFailureRemovesArchive();
+    void extractionUndoHandlesHardlinks();
+    void concurrentArchiveOutputIsPreserved();
+    void danglingArchiveOutputIsPreserved();
+    void extractionUndoPreservesLaterChanges_data();
+    void extractionUndoPreservesLaterChanges();
     void initTestCase() { g_log_set_always_fatal(G_LOG_LEVEL_CRITICAL); }
 
     // engine: compress
@@ -514,6 +519,129 @@ void TestArchives::finalizationFailureRemovesArchive()
     QVERIFY(WIFEXITED(status));
     QCOMPARE(WEXITSTATUS(status), 0);
     QVERIFY(!QFileInfo::exists(archive));
+}
+
+
+void TestArchives::concurrentArchiveOutputIsPreserved()
+{
+    for (bool cancel : {false, true}) {
+        TempTree tree;
+        tree.writeFile("source", 262144);
+        const QString target = tree.filePath("out.zip");
+        bool attempted = false, created = false;
+        QString error;
+        const bool ok = ArchiveEngine::compress({tree.filePath("source")}, target, &error,
+            [&] { return cancel && attempted; }, [&](qint64, qint64) {
+                if (attempted)
+                    return;
+                attempted = true;
+                QFile competitor(target);
+                created = competitor.open(QIODevice::WriteOnly | QIODevice::NewOnly);
+                if (created)
+                    competitor.write("unrelated file");
+            });
+        QVERIFY(attempted);
+        QVERIFY(created);
+        QVERIFY(!ok);
+        QVERIFY(!error.isEmpty());
+        QCOMPARE(read(target), QStringLiteral("unrelated file"));
+        QVERIFY(QDir(tree.path()).entryList({".omanta-compress-*"}, QDir::Dirs | QDir::Hidden).isEmpty());
+    }
+}
+
+void TestArchives::danglingArchiveOutputIsPreserved()
+{
+    TempTree tree;
+    tree.writeFile("source", 100);
+    const QString output = tree.filePath("out.zip");
+    const QString target = tree.filePath("unrelated");
+    QVERIFY(QFile::link(target, output));
+    QString error;
+    QVERIFY(!engineCompress({tree.filePath("source")}, output, &error));
+    QVERIFY(QFileInfo(output).isSymLink());
+    QVERIFY(!QFileInfo::exists(target));
+}
+
+void TestArchives::extractionUndoPreservesLaterChanges_data()
+{
+    QTest::addColumn<QString>("change");
+    for (const char *change : {"addition", "edit", "replacement", "directory-link"})
+        QTest::newRow(change) << QString::fromLatin1(change);
+}
+
+void TestArchives::extractionUndoPreservesLaterChanges()
+{
+    QFETCH(QString, change);
+    TempTree tree;
+    write(tree, "folder/original", "original");
+    write(tree, "folder/sub/child", "child");
+    tree.makeDir("out");
+    QString error;
+    QVERIFY(engineCompress({tree.filePath("folder")}, tree.filePath("a.zip"), &error));
+    FileOperations ops;
+    ops.extractHere({tree.filePath("a.zip")}, tree.filePath("out"));
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    const QString root = tree.filePath("out/folder");
+    if (change == "addition") {
+        write(tree, "out/folder/later", "new work");
+    } else if (change == "edit") {
+        // Same size and restored mtime must not make an edit look unchanged.
+        QFile f(root + "/original");
+        const QDateTime modified = QFileInfo(f).lastModified();
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(f.write("modified"), 8);
+        QVERIFY(f.setFileTime(modified, QFileDevice::FileModificationTime));
+    } else if (change == "replacement") {
+        QVERIFY(QFile::rename(root + "/original", tree.filePath("kept-original")));
+        write(tree, "out/folder/original", "replaced");
+    } else {
+        QVERIFY(QDir().rename(root + "/sub", tree.filePath("kept-sub")));
+        QVERIFY(QFile::link(tree.filePath("kept-sub"), root + "/sub"));
+    }
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY(!ops.lastError().isEmpty());
+    QVERIFY(!ops.canRedo());
+    QCOMPARE(read(root + "/original"), change == "edit" ? QStringLiteral("modified")
+        : change == "replacement" ? QStringLiteral("replaced") : QStringLiteral("original"));
+    QCOMPARE(read(root + "/sub/child"), QStringLiteral("child"));
+    if (change == "addition")
+        QCOMPARE(read(root + "/later"), QStringLiteral("new work"));
+}
+
+
+void TestArchives::extractionUndoHandlesHardlinks()
+{
+    if (QStandardPaths::findExecutable("bsdtar").isEmpty())
+        QSKIP("bsdtar not installed");
+    TempTree tree;
+    tree.writeFile("folder/original", 42);
+    const QByteArray original = QFile::encodeName(tree.filePath("folder/original"));
+    const QByteArray linked = QFile::encodeName(tree.filePath("folder/hardlink"));
+    QCOMPARE(link(original.constData(), linked.constData()), 0);
+    QVERIFY(QFile::link("original", tree.filePath("folder/symlink")));
+    QProcess tar;
+    tar.setWorkingDirectory(tree.path());
+    tar.start("bsdtar", {"-cf", "hardlinks.tar", "folder"});
+    QVERIFY(tar.waitForFinished(5000));
+    QCOMPARE(tar.exitCode(), 0);
+    tree.makeDir("out");
+    FileOperations ops;
+    ops.extractHere({tree.filePath("hardlinks.tar")}, tree.filePath("out"));
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(read(tree.filePath("out/folder/hardlink")).size(), 42);
+    QVERIFY(QFileInfo(tree.filePath("out/folder/symlink")).isSymLink());
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QVERIFY(QDir(tree.filePath("out")).isEmpty());
+    QVERIFY(ops.canRedo());
+    ops.redo();
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(read(tree.filePath("out/folder/hardlink")).size(), 42);
 }
 
 QTEST_GUILESS_MAIN(TestArchives)

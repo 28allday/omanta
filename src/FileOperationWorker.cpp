@@ -200,6 +200,10 @@ void FileOperationWorker::run(const FileOperationRequest &request, quint64 id)
     case FileOperationRequest::UndoTransfer:
         ok = doUndoTransfer(request, &error, id);
         break;
+    case FileOperationRequest::UndoExtraction:
+        ok = ArchiveEngine::undoExtraction(request.created, &error,
+            [this] { return bool(g_cancellable_is_cancelled(m_cancellable)); });
+        break;
     case FileOperationRequest::Copy:
         ok = doTransfer(request, false, result, &error, id);
         break;
@@ -449,7 +453,7 @@ bool FileOperationWorker::doExtract(const FileOperationRequest &request,
                 throttle.restart();
                 Q_EMIT progressed(id, done, total, QFileInfo(archive).fileName());
             },
-            request.password, &needsPassphrase);
+            request.password, &needsPassphrase, &result.created);
         // Fail fast, but report what already landed — like a partial trash,
         // the completed extractions are real and stay.
         if (!ok) {
@@ -476,6 +480,11 @@ bool FileOperationWorker::doTrash(const FileOperationRequest &request,
 
         if (!ok) {
             *error = messageOf(gerror, "Could not move to trash");
+            if (g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
+                result.trashUnavailable << path;
+                g_clear_error(&gerror);
+                continue; // determine which other sources actually lack Trash
+            }
             g_clear_error(&gerror);
             // Report what did make it, so undo can still put those back.
             return false;
@@ -483,7 +492,7 @@ bool FileOperationWorker::doTrash(const FileOperationRequest &request,
         g_clear_error(&gerror);
         result.sources << path;
     }
-    return true;
+    return result.trashUnavailable.isEmpty();
 }
 
 bool FileOperationWorker::doRestore(const FileOperationRequest &request,

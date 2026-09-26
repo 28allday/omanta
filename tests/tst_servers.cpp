@@ -1,6 +1,7 @@
 #include "NetworkModel.h"
 #include "ServerStore.h"
 #include "DirectoryModel.h"
+#include "Location.h"
 
 #include <QDir>
 #include <QFile>
@@ -22,6 +23,8 @@ class TestServers : public QObject
 private Q_SLOTS:
     void initTestCase();
 
+    void passwordsNeverPersist();
+    void migratesStoredPasswords();
     void addsAndPersists();
     void normalizesTrailingSlash();
     void refusesNonServerAddresses();
@@ -188,6 +191,44 @@ void TestServers::modelFollowsTheStore()
     QVERIFY(waitFor([&] {
         return !modelUris(model).contains(QStringLiteral("smb://late/arrival"));
     }));
+}
+
+
+void TestServers::passwordsNeverPersist()
+{
+    resetStoreFile();
+    ServerStore store;
+    const QString raw = "sftp://alice:TEST%40ONLY%3ASECRET@example.invalid:2222/a%20b/";
+    const QString safe = "sftp://alice@example.invalid:2222/a%20b";
+    store.add(raw);
+    store.add(safe);
+    QCOMPARE(store.uris(), QStringList{safe});
+    QVERIFY(store.isKnown(raw));
+    QFile file(storeFile());
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), safe.toUtf8() + '\n');
+    QVERIFY(!(file.permissions() & (QFileDevice::ReadGroup | QFileDevice::WriteGroup
+        | QFileDevice::ReadOther | QFileDevice::WriteOther)));
+    QCOMPARE(Location::withoutPassword(raw), safe + '/');
+    QCOMPARE(Location::clean(raw), Location::clean(safe + '/'));
+    GFile *remote = Location::make(raw);
+    QCOMPARE(Location::fromGFile(remote), Location::clean(safe + '/'));
+    g_object_unref(remote);
+    QCOMPARE(Location::clean("/tmp/alice:secret@host"), QStringLiteral("/tmp/alice:secret@host"));
+}
+
+void TestServers::migratesStoredPasswords()
+{
+    resetStoreFile("ftp://alice:TEST_ONLY_SECRET@example.invalid/files/\n"
+                   "ftp://alice@example.invalid/files\n"
+                   "smb://bob:ENCODED%40SECRET@host/share\n");
+    ServerStore store;
+    QCOMPARE(store.uris(), (QStringList{"ftp://alice@example.invalid/files", "smb://bob@host/share"}));
+    QFile file(storeFile());
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), QByteArray("ftp://alice@example.invalid/files\nsmb://bob@host/share\n"));
+    ServerStore reloaded;
+    QCOMPARE(reloaded.uris(), store.uris());
 }
 
 QTEST_GUILESS_MAIN(TestServers)

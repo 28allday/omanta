@@ -618,7 +618,7 @@ Window {
                 onOpsPopoverClosed: root.returnFocusToView()
                 onDropRequested: (urls, location) => {
                     if (location === "trash:///")
-                        FileOperations.trash(Platform.locationsFromUrls(urls));
+                        FileOperations.trash(Platform.locationsFromUrls(urls), root);
                     else if (location === "starred:///")
                         StarredStore.star(Platform.locationsFromUrls(urls));
                     else if (root.currentTab)
@@ -1015,7 +1015,7 @@ Window {
             flash(qsTr("Addresses need a protocol prefix — smb://, sftp://, ftp://…"));
             return;
         }
-        pendingServer = address;
+        pendingServer = Platform.resolvePath(address, "");
         windowMounter.mountLocation(address);
     }
 
@@ -1054,7 +1054,7 @@ Window {
         }
         const paths = selection();
         if (paths.length > 0)
-            FileOperations.trash(paths);
+            FileOperations.trash(paths, root);
     }
 
     function restoreSelected() {
@@ -1271,15 +1271,11 @@ Window {
 
     Connections {
         target: FileOperations
-        function onLastErrorChanged() {
-            const message = FileOperations.lastError;
-            if (message === "")
+        function onTrashUnavailable(paths, requester) {
+            if (requester !== root || paths.length === 0)
                 return;
-            if (message.indexOf("not supported") >= 0 && root.selection().length > 0) {
-                trashUnavailable.pending = root.selection();
-                trashUnavailable.open();
-                FileOperations.clearError();
-            }
+            trashUnavailable.pending = paths;
+            trashUnavailable.open();
         }
     }
 

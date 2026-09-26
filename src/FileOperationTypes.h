@@ -28,6 +28,20 @@ struct TransferEntry
     quint32 mode = 0;
 };
 
+// Identity and metadata of an extracted output, captured before publication.
+// Undo checks these and never recursively removes a directory.
+struct CreatedEntry
+{
+    QString path;
+    quint64 device = 0;
+    quint64 inode = 0;
+    quint32 mode = 0;
+    qint64 size = 0;
+    qint64 modifiedNs = 0;
+    qint64 changedNs = 0;
+    bool directory = false;
+};
+
 struct FileOperationRequest
 {
     enum Kind {
@@ -59,13 +73,15 @@ struct FileOperationRequest
         // there since. Trash would be safer still, but trash does not exist on
         // every filesystem — see RemoveCreatedFolder in NOTES.md.
         RemoveCreatedFolder,
-        UndoTransfer
+        UndoTransfer,
+        UndoExtraction
     };
 
     Kind kind = Copy;
     QStringList sources;
     QString destination;
     QList<TransferEntry> transfers; // UndoTransfer only
+    QList<CreatedEntry> created; // UndoExtraction only
     QStringList names; // BatchRename only: the new name per source, parallel
     ConflictPolicy policy = ConflictPolicy::RenameNew;
     // Compress: encrypt the zip with this. Extract: unlock with this.
@@ -83,11 +99,13 @@ struct FileOperationRequest
 // for" is not the same list once conflict renaming has happened.
 struct FileOperationResult
 {
+    QList<CreatedEntry> created;
     QList<TransferEntry> transfers;
     bool undoable = true; // replacing existing data cannot be undone
     QStringList produced; // paths this operation created
     QStringList sources;  // paths it consumed or moved from
     QStringList skipped;  // paths deliberately left alone
+    QStringList trashUnavailable; // only sources rejected with G_IO_ERROR_NOT_SUPPORTED
 };
 
 Q_DECLARE_METATYPE(FileOperationRequest)

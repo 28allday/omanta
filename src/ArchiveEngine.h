@@ -1,5 +1,7 @@
 #pragma once
 
+#include "FileOperationTypes.h"
+
 #include <QString>
 #include <QStringList>
 
@@ -34,10 +36,14 @@ bool compress(const QStringList &sources, const QString &archivePath,
 // outside the destination. `produced` receives the final top-level path.
 // `needsPassphrase` (optional) is set when the failure was a missing or wrong
 // password — the caller can ask for one and retry instead of showing an error.
+// `created` optionally receives the per-entry journal for a safe Undo.
 bool extract(const QString &archivePath, const QString &destinationDir,
              QString *produced, QString *error, const Cancelled &cancelled,
              const Progress &progress, const QString &password = QString(),
-             bool *needsPassphrase = nullptr);
+             bool *needsPassphrase = nullptr, QList<CreatedEntry> *created = nullptr);
+
+bool undoExtraction(const QList<CreatedEntry> &created, QString *error,
+                    const Cancelled &cancelled);
 
 // Where the archive extension starts in `name` (compound-aware: ".tar.gz" is
 // one unit), or -1. Used for the landing folder's name and by the UI to

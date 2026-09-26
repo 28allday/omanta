@@ -3,6 +3,7 @@
 #include <QElapsedTimer>
 #include <QList>
 #include <QObject>
+#include <QPointer>
 #include <QQueue>
 #include <QVariantList>
 #include <QStringList>
@@ -77,7 +78,7 @@ public:
     // and shifts go through temp names) and all-or-nothing: a mid-batch
     // failure rolls the completed renames back.
     Q_INVOKABLE void batchRename(const QStringList &paths, const QStringList &newNames);
-    Q_INVOKABLE void trash(const QStringList &paths);
+    Q_INVOKABLE void trash(const QStringList &paths, QObject *requester = nullptr);
 
     // "Link to <name>" symlinks in destinationDir, one per path — Nautilus's
     // optional Create Link action. Taken names get the "(copy)" suffixing.
@@ -137,6 +138,7 @@ Q_SIGNALS:
     void operationFinished(const QString &label);
     // An extract needs a password; the window shows the prompt.
     void passphraseNeeded(const QString &archiveName);
+    void trashUnavailable(const QStringList &paths, QObject *requester);
 
     // Internal: hands work to the worker thread.
     void dispatch(const FileOperationRequest &request, quint64 id);
@@ -156,6 +158,8 @@ private:
         FileOperationResult completed;
         bool isUndo = false;
         bool isRedo = false;
+        bool allowRedo = true;
+        QPointer<QObject> requester;
         // Set on an undo: what becomes redoable once the undo succeeds. A
         // failed undo must offer no redo of something still done.
         QString redoLabel;
@@ -166,6 +170,7 @@ private:
         QString label;
         FileOperationRequest inverse;
         FileOperationRequest redo; // the original request, replayed by redo()
+        bool allowRedo = true;
     };
 
     struct RedoEntry {
@@ -173,10 +178,11 @@ private:
         FileOperationRequest request;
     };
 
-    void enqueue(const FileOperationRequest &request);
+    void enqueue(const FileOperationRequest &request, QObject *requester = nullptr);
     void enqueuePending(Pending pending);
     void startNext();
-    void recordUndo(const FileOperationRequest &request, const FileOperationResult &result);
+    void recordUndo(const FileOperationRequest &request, const FileOperationResult &result,
+                    bool allowRedo = true);
     void setBusy(bool busy);
     void setStatus(const QString &text, qreal progress);
     void setError(const QString &message);

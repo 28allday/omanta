@@ -49,6 +49,13 @@ bool isLocal(const QString &location)
     return QUrl(location).isLocalFile();
 }
 
+QString withoutPassword(const QString &location)
+{
+    if (!isUri(location))
+        return location;
+    return QUrl(location).toString(QUrl::RemovePassword | QUrl::FullyEncoded);
+}
+
 QString clean(const QString &location)
 {
     if (location.isEmpty())
@@ -64,7 +71,7 @@ QString clean(const QString &location)
     // Round-tripping through GIO is the URI normalizer: it settles trailing
     // slashes and escaping so "the same place" is also the same string —
     // which is what tab titles, history and the model's change check compare.
-    GFile *file = g_file_new_for_uri(location.toUtf8().constData());
+    GFile *file = g_file_new_for_uri(withoutPassword(location).toUtf8().constData());
     const QString normalized = fromGFile(file);
     g_object_unref(file);
     return normalized;
@@ -92,7 +99,7 @@ QString fromGFile(GFile *file)
         }
     }
     char *uri = g_file_get_uri(file);
-    const QString result = QString::fromUtf8(uri);
+    const QString result = withoutPassword(QString::fromUtf8(uri));
     g_free(uri);
     return result;
 }

@@ -96,7 +96,7 @@ void Mounter::mountLocation(const QString &location)
     GFile *file = Location::make(location);
     GMountOperation *operation = createOperation();
 
-    auto *ctx = new MountCtx{ this, location };
+    auto *ctx = new MountCtx{ this, Location::clean(location) };
     g_file_mount_enclosing_volume(file, G_MOUNT_MOUNT_NONE, operation, nullptr,
                                   &Mounter::onMountReady, ctx);
     g_object_unref(operation); // the async call holds its own ref

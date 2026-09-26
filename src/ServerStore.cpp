@@ -5,18 +5,18 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QSaveFile>
 #include <QTimer>
 #include <QUrl>
 
 ServerStore::ServerStore(QObject *parent)
     : QObject(parent)
 {
-    load();
-
     // Watch for another process editing the file — same re-arm dance as the
     // starred and bookmarks watches.
     m_watcher = new QFileSystemWatcher(this);
-    if (QFile::exists(filePath()))
+    load(); // also migrates any previously stored URL passwords
+    if (QFile::exists(filePath()) && !m_watcher->files().contains(filePath()))
         m_watcher->addPath(filePath());
     const QString dir = QFileInfo(filePath()).absolutePath();
     if (QDir(dir).exists())
@@ -35,7 +35,7 @@ ServerStore::ServerStore(QObject *parent)
 
 QString ServerStore::normalize(const QString &uri)
 {
-    QString out = uri.trimmed();
+    QString out = Location::withoutPassword(uri.trimmed());
     while (out.endsWith(QLatin1Char('/')) && !out.endsWith(QStringLiteral("://")))
         out.chop(1);
     return out;
@@ -58,24 +58,30 @@ void ServerStore::load()
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return;
     const QStringList lines = QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'));
+    bool containedPassword = false;
     for (const QString &raw : lines) {
+        containedPassword |= raw.trimmed() != Location::withoutPassword(raw.trimmed());
         const QString uri = normalize(raw);
         if (uri.isEmpty() || m_uris.contains(uri))
             continue;
         m_uris.insert(uri);
         m_order.append(uri);
     }
+    file.close();
+    if (containedPassword)
+        save();
 }
 
 void ServerStore::save()
 {
     QDir().mkpath(QFileInfo(filePath()).absolutePath());
-    QFile file(filePath());
+    QSaveFile file(filePath());
     m_saving = true;
-    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         for (const QString &uri : std::as_const(m_order))
             file.write(uri.toUtf8() + '\n');
-        file.close();
+        file.commit();
     }
     if (!m_watcher->files().contains(filePath()))
         m_watcher->addPath(filePath());

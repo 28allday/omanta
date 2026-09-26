@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QLocale>
+#include <algorithm>
 
 QString FileOperationRequest::describe() const
 {
@@ -26,6 +27,7 @@ QString FileOperationRequest::describe() const
     case DeletePermanently: return QStringLiteral("Delete %1").arg(what);
     case EmptyTrash: return QStringLiteral("Empty the trash");
     case UndoTransfer: return QStringLiteral("Undo transfer");
+    case UndoExtraction: return QStringLiteral("Undo extraction");
     case RemoveCreatedFolder: return QStringLiteral("Remove %1").arg(what);
     }
     return QStringLiteral("Operation");
@@ -51,6 +53,7 @@ QString FileOperationRequest::shortStatus() const
     case DeletePermanently: return QStringLiteral("Deleting %1").arg(what);
     case EmptyTrash: return QStringLiteral("Emptying the trash");
     case UndoTransfer: return QStringLiteral("Undo transfer");
+    case UndoExtraction: return QStringLiteral("Undoing extraction");
     case RemoveCreatedFolder: return QStringLiteral("Removing %1").arg(what);
     }
     return QStringLiteral("Working");
@@ -120,7 +123,7 @@ void FileOperations::clearError()
     setError(QString());
 }
 
-void FileOperations::enqueue(const FileOperationRequest &request)
+void FileOperations::enqueue(const FileOperationRequest &request, QObject *requester)
 {
     // A fresh operation forks history: whatever was undone can no longer be
     // replayed on top of a world that has moved on.
@@ -130,6 +133,7 @@ void FileOperations::enqueue(const FileOperationRequest &request)
     }
     Pending pending;
     pending.request = request;
+    pending.requester = requester;
     enqueuePending(pending);
 }
 
@@ -285,7 +289,8 @@ void FileOperations::handleSuccess(quint64 id, const FileOperationResult &result
     // instead is arm the redo — only now, on success: a failed undo must
     // not offer to "redo" something still done.
     if (m_current.isUndo) {
-        m_redoStack.append({ m_current.redoLabel, m_current.redoRequest });
+        if (m_current.allowRedo)
+            m_redoStack.append({ m_current.redoLabel, m_current.redoRequest });
         Q_EMIT historyChanged();
     } else {
         // A redo records its undo again like any fresh operation — undo,
@@ -293,6 +298,7 @@ void FileOperations::handleSuccess(quint64 id, const FileOperationResult &result
         FileOperationResult combined = result;
         combined.produced = m_current.completed.produced + result.produced;
         combined.sources = m_current.completed.sources + result.sources;
+        combined.created = m_current.completed.created + result.created;
         recordUndo(m_current.originalRequest, combined);
     }
 
@@ -314,10 +320,25 @@ void FileOperations::handleFailure(quint64 id, const QString &message,
         FileOperationResult combined = result;
         combined.sources = m_current.completed.sources + result.sources;
         combined.produced = m_current.completed.produced + result.produced;
+        combined.created = m_current.completed.created + result.created;
         auto completed = m_current.originalRequest;
         completed.sources = combined.sources;
         recordUndo(completed, combined);
+    } else if (!m_current.isUndo
+               && (m_current.request.kind == FileOperationRequest::Copy
+                   || m_current.request.kind == FileOperationRequest::Move)) {
+        // Keep the exact completed journal. Replaying the original batch
+        // would also retry failed/skipped entries, so partial transfers have
+        // undo but no redo.
+        recordUndo(m_current.request, result, false);
+    } else if (!m_current.isUndo && m_current.request.kind == FileOperationRequest::Trash) {
+        auto completed = m_current.request;
+        completed.sources = result.sources;
+        recordUndo(completed, result);
     }
+    if (!m_current.isUndo && m_current.request.kind == FileOperationRequest::Trash
+        && !result.trashUnavailable.isEmpty())
+        Q_EMIT trashUnavailable(result.trashUnavailable, m_current.requester);
     startNext();
 }
 
@@ -333,6 +354,7 @@ void FileOperations::handlePassphraseNeeded(quint64 id, const QString &archiveNa
     m_passphrasePending = m_current;
     m_passphrasePending.completed.sources += completed.sources;
     m_passphrasePending.completed.produced += completed.produced;
+    m_passphrasePending.completed.created += completed.created;
     m_passphrasePending.request.sources = m_current.request.sources.mid(completed.sources.size());
     m_passphrasePending.request.password.clear();
     m_awaitingPassphrase = true;
@@ -343,7 +365,7 @@ void FileOperations::handlePassphraseNeeded(quint64 id, const QString &archiveNa
 }
 
 void FileOperations::recordUndo(const FileOperationRequest &request,
-                                const FileOperationResult &result)
+                                const FileOperationResult &result, bool allowRedo)
 {
     UndoEntry entry;
     entry.label = request.describe();
@@ -351,6 +373,7 @@ void FileOperations::recordUndo(const FileOperationRequest &request,
     // the same disk state (RenameNew resolves conflicts the same way), and
     // incapable of overwriting anything if the state drifted meanwhile.
     entry.redo = request;
+    entry.allowRedo = allowRedo;
 
     switch (request.kind) {
     case FileOperationRequest::CreateFolder:
@@ -391,7 +414,8 @@ void FileOperations::recordUndo(const FileOperationRequest &request,
 
     case FileOperationRequest::Copy:
     case FileOperationRequest::Move:
-        if (!result.undoable || result.transfers.isEmpty())
+        if (!result.undoable || std::none_of(result.transfers.cbegin(), result.transfers.cend(),
+                                            [](const TransferEntry &item) { return item.created || item.moved; }))
             return;
         entry.inverse.kind = FileOperationRequest::UndoTransfer;
         entry.inverse.transfers = result.transfers;
@@ -406,13 +430,16 @@ void FileOperations::recordUndo(const FileOperationRequest &request,
         entry.inverse.sources = result.produced;
         break;
 
-    case FileOperationRequest::Compress:
     case FileOperationRequest::Extract:
+        if (result.created.isEmpty())
+            return;
+        entry.inverse.kind = FileOperationRequest::UndoExtraction;
+        entry.inverse.created = result.created;
+        break;
+
+    case FileOperationRequest::Compress:
     case FileOperationRequest::CreateLink:
-        // Same shape as undoing a copy: what came out is deleted, what went
-        // in is untouched. The archive keeps the originals (extract), the
-        // originals keep themselves (compress), and a symlink's target never
-        // belonged to the link — deleting the product loses nothing.
+        // Remove the generated archive or link; their sources stay intact.
         if (result.produced.isEmpty())
             return;
         entry.inverse.kind = FileOperationRequest::DeletePermanently;
@@ -420,6 +447,7 @@ void FileOperations::recordUndo(const FileOperationRequest &request,
         break;
 
     case FileOperationRequest::UndoTransfer:
+    case FileOperationRequest::UndoExtraction:
     case FileOperationRequest::RemoveCreatedFolder:
     case FileOperationRequest::DeletePermanently:
     case FileOperationRequest::EmptyTrash:
@@ -444,6 +472,7 @@ void FileOperations::undo()
     pending.isUndo = true;
     pending.redoLabel = entry.label;
     pending.redoRequest = entry.redo;
+    pending.allowRedo = entry.allowRedo;
     enqueuePending(pending);
 }
 
@@ -579,14 +608,14 @@ void FileOperations::extractHere(const QStringList &archivePaths, const QString 
     enqueue(request);
 }
 
-void FileOperations::trash(const QStringList &paths)
+void FileOperations::trash(const QStringList &paths, QObject *requester)
 {
     if (paths.isEmpty())
         return;
     FileOperationRequest request;
     request.kind = FileOperationRequest::Trash;
     request.sources = paths;
-    enqueue(request);
+    enqueue(request, requester);
 }
 
 void FileOperations::deletePermanently(const QStringList &paths)

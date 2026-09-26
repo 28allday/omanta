@@ -74,6 +74,8 @@ FocusScope {
     property var selectedNames: Object.create(null)
     property int currentIndex: -1
     property int anchorIndex: -1
+    property string changingCurrentName: ""
+    property string changingAnchorName: ""
 
     signal contextMenuRequested()
     // The tab's location needs mounting first — the window runs the mount
@@ -198,6 +200,51 @@ FocusScope {
                 root.positionAt(row);
             }
         }
+    }
+
+    // Names survive sorting; removed/filtered rows must not leave stale
+    // selections or make keyboard navigation silently point at another file.
+    function rememberNavigation() {
+        changingCurrentName = currentIndex >= 0 ? (files.valueAt(currentIndex, "name") || "") : "";
+        changingAnchorName = anchorIndex >= 0 ? (files.valueAt(anchorIndex, "name") || "") : "";
+    }
+
+    function reconcileSelection() {
+        const next = Object.create(null);
+        let retained = 0;
+        let current = -1;
+        let anchor = -1;
+        // Scan the visible rows once, including while DirectoryModel is
+        // between batched removals and has not rebuilt its name index yet.
+        if (selectionCount || changingCurrentName || changingAnchorName) {
+            for (let row = 0; row < files.count; ++row) {
+                const name = files.valueAt(row, "name");
+                if (selectedNames[name] === true) {
+                    next[name] = true;
+                    ++retained;
+                }
+                if (name === changingCurrentName)
+                    current = row;
+                if (name === changingAnchorName)
+                    anchor = row;
+            }
+        }
+        if (retained !== selectionCount)
+            selectedNames = next;
+        currentIndex = current;
+        anchorIndex = anchor;
+    }
+
+    Connections {
+        target: root.files
+        function onRowsAboutToBeRemoved() { root.rememberNavigation(); }
+        function onRowsAboutToBeInserted() { root.rememberNavigation(); }
+        function onLayoutAboutToBeChanged() { root.rememberNavigation(); }
+        function onModelAboutToBeReset() { root.rememberNavigation(); }
+        function onRowsRemoved() { root.reconcileSelection(); }
+        function onRowsInserted() { root.reconcileSelection(); }
+        function onLayoutChanged() { root.reconcileSelection(); }
+        function onModelReset() { root.reconcileSelection(); }
     }
 
     // ---- navigation -------------------------------------------------------

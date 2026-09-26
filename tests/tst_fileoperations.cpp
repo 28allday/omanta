@@ -1,5 +1,6 @@
 #include "ArchiveEngine.h"
 #include "FileOperations.h"
+#include "FileOperationWorker.h"
 #include "TestFixture.h"
 
 #include <QDir>
@@ -19,6 +20,9 @@ class TestFileOperations : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void cancelledCopyReturnsCompletedJournal();
+    void failedMoveKeepsPartialUndo();
+    void unsupportedTrashReportsOnlyItsOwnSources();
     void decliningBatchPasswordKeepsPartialUndo();
     void queuedPasswordRequestsStaySeparate();
     void failedBatchExtractionKeepsPartialUndo();
@@ -1239,6 +1243,82 @@ void TestFileOperations::undoOfCopyKeepsLaterAdditions()
     QVERIFY(!ops.lastError().isEmpty()); // containing directory is no longer empty
     QCOMPARE(read(tree.filePath("dst/folder/later")).size(), 37);
     QVERIFY(!QFileInfo::exists(tree.filePath("dst/folder/a")));
+}
+
+
+void TestFileOperations::failedMoveKeepsPartialUndo()
+{
+    TempTree tree;
+    tree.writeFile("src/first", 19);
+    tree.makeDir("dst");
+    FileOperations ops;
+    ops.move({tree.filePath("src/first"), tree.filePath("src/missing")}, tree.filePath("dst"));
+    QVERIFY(settle(ops));
+    QVERIFY(!ops.lastError().isEmpty());
+    QVERIFY(!QFileInfo::exists(tree.filePath("src/first")));
+    QCOMPARE(read(tree.filePath("dst/first")).size(), 19);
+    QVERIFY(ops.canUndo());
+    ops.clearError();
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(read(tree.filePath("src/first")).size(), 19);
+    QVERIFY(!QFileInfo::exists(tree.filePath("dst/first")));
+    QVERIFY(!ops.canRedo()); // the failed part must never be retried by redo
+}
+
+void TestFileOperations::unsupportedTrashReportsOnlyItsOwnSources()
+{
+    TempTree tree;
+    const QString source = tree.writeFile("source", 19);
+    FileOperations ops;
+    QObject requester;
+    QSignalSpy fallback(&ops, &FileOperations::trashUnavailable);
+    ops.copy({source}, "omanta-test-unsupported://host/destination");
+    QVERIFY(settle(ops));
+    QVERIFY(!ops.lastError().isEmpty());
+    QCOMPARE(fallback.size(), 0);
+
+    const QString unsupported = "omanta-test-unsupported://host/source";
+    ops.trash({unsupported, tree.filePath("missing"), source}, &requester);
+    QVERIFY(settle(ops));
+    QCOMPARE(fallback.size(), 1);
+    QCOMPARE(fallback.first().first().toStringList(), QStringList{unsupported});
+    QCOMPARE(fallback.first().at(1).value<QObject *>(), &requester);
+    QCOMPARE(read(source).size(), 19); // unattempted source never enters the fallback
+}
+
+
+void TestFileOperations::cancelledCopyReturnsCompletedJournal()
+{
+    TempTree tree;
+    tree.writeFile("first", 19);
+    tree.writeFile("second", 29);
+    tree.makeDir("dst");
+    FileOperationWorker worker;
+    QSignalSpy failed(&worker, &FileOperationWorker::failed);
+    connect(&worker, &FileOperationWorker::progressed, &worker, [&] {
+        worker.requestCancel();
+    });
+    FileOperationRequest request;
+    request.kind = FileOperationRequest::Copy;
+    request.sources = {tree.filePath("first"), tree.filePath("second")};
+    request.destination = tree.filePath("dst");
+    worker.run(request, 1);
+    QCOMPARE(failed.size(), 1);
+    const auto result = failed.first().at(2).value<FileOperationResult>();
+    QCOMPARE(result.transfers.size(), 1);
+    QCOMPARE(result.transfers.first().source, tree.filePath("first"));
+    QVERIFY(result.transfers.first().created);
+    worker.prepare();
+    FileOperationRequest undo;
+    undo.kind = FileOperationRequest::UndoTransfer;
+    undo.transfers = result.transfers;
+    worker.run(undo, 2);
+    QCOMPARE(failed.size(), 1);
+    QVERIFY(QDir(tree.filePath("dst")).isEmpty());
+    QCOMPARE(read(tree.filePath("first")).size(), 19);
+    QCOMPARE(read(tree.filePath("second")).size(), 29);
 }
 
 QTEST_GUILESS_MAIN(TestFileOperations)

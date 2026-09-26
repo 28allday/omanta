@@ -39,14 +39,19 @@ Omarchy theme.
 - Multi-window single instance, `org.freedesktop.FileManager1` — "open
   containing folder" from browsers and other apps just works
 
+Completed work from a failed or cancelled copy/move remains undoable when it
+has not replaced existing files. These partial batches cannot be redone.
+Extraction Undo preserves later additions, edits, and replacement files by
+refusing to remove an output that has changed.
+
 ## Install
 
 Grab the package from the [latest release](https://github.com/28allday/omanta/releases)
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.10/omanta-0.1.10-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.10-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.11/omanta-0.1.11-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.11-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —
