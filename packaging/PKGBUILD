@@ -18,7 +18,7 @@ arch=('x86_64')
 url="https://github.com/28allday/omanta"
 license=('MIT')
 install="$pkgname.install"
-depends=('qt6-base' 'qt6-declarative' 'glib2' 'gvfs' 'hicolor-icon-theme'
+depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'glib2' 'gvfs' 'hicolor-icon-theme'
          'libarchive' 'tinysparql')
 optdepends=('gvfs-smb: browse smb:// shares'
             'gvfs-mtp: phones over MTP'

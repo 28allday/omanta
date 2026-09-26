@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMetaType>
+#include <QList>
 #include <QString>
 #include <QStringList>
 
@@ -12,6 +13,19 @@ enum class ConflictPolicy {
     RenameNew, // copy → "file (copy).txt"
     Replace,   // overwrite the existing file
     Skip,      // leave the existing file alone
+    Fail,      // internal: undo must restore the exact name without clobbering
+};
+
+// Actual transfer entries, including directory containers that were merged.
+// A native directory rename is one atomic entry (directory == false).
+struct TransferEntry
+{
+    QString source;
+    QString destination;
+    bool directory = false;
+    bool created = false;
+    bool moved = false;
+    quint32 mode = 0;
 };
 
 struct FileOperationRequest
@@ -44,12 +58,14 @@ struct FileOperationRequest
         // empty, so undoing a mkdir can never destroy files the user has put
         // there since. Trash would be safer still, but trash does not exist on
         // every filesystem — see RemoveCreatedFolder in NOTES.md.
-        RemoveCreatedFolder
+        RemoveCreatedFolder,
+        UndoTransfer
     };
 
     Kind kind = Copy;
     QStringList sources;
     QString destination;
+    QList<TransferEntry> transfers; // UndoTransfer only
     QStringList names; // BatchRename only: the new name per source, parallel
     ConflictPolicy policy = ConflictPolicy::RenameNew;
     // Compress: encrypt the zip with this. Extract: unlock with this.
@@ -67,6 +83,8 @@ struct FileOperationRequest
 // for" is not the same list once conflict renaming has happened.
 struct FileOperationResult
 {
+    QList<TransferEntry> transfers;
+    bool undoable = true; // replacing existing data cannot be undone
     QStringList produced; // paths this operation created
     QStringList sources;  // paths it consumed or moved from
     QStringList skipped;  // paths deliberately left alone

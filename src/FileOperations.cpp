@@ -1,6 +1,7 @@
 #include "FileOperations.h"
 
 #include "FileOperationWorker.h"
+#include "Location.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -24,6 +25,7 @@ QString FileOperationRequest::describe() const
     case Move: return QStringLiteral("Move %1").arg(what);
     case DeletePermanently: return QStringLiteral("Delete %1").arg(what);
     case EmptyTrash: return QStringLiteral("Empty the trash");
+    case UndoTransfer: return QStringLiteral("Undo transfer");
     case RemoveCreatedFolder: return QStringLiteral("Remove %1").arg(what);
     }
     return QStringLiteral("Operation");
@@ -48,6 +50,7 @@ QString FileOperationRequest::shortStatus() const
     case Move: return QStringLiteral("Moving %1").arg(what);
     case DeletePermanently: return QStringLiteral("Deleting %1").arg(what);
     case EmptyTrash: return QStringLiteral("Emptying the trash");
+    case UndoTransfer: return QStringLiteral("Undo transfer");
     case RemoveCreatedFolder: return QStringLiteral("Removing %1").arg(what);
     }
     return QStringLiteral("Working");
@@ -78,7 +81,7 @@ FileOperations::~FileOperations()
     if (m_worker)
         m_worker->requestCancel();
     m_thread.quit();
-    m_thread.wait(5000);
+    m_thread.wait();
 }
 
 QString FileOperations::undoLabel() const
@@ -132,9 +135,11 @@ void FileOperations::enqueue(const FileOperationRequest &request)
 
 void FileOperations::enqueuePending(Pending pending)
 {
+    if (pending.id == 0)
+        pending.originalRequest = pending.request;
     pending.id = m_nextId++;
     m_queue.enqueue(pending);
-    if (!m_busy)
+    if (!m_busy && !m_awaitingPassphrase)
         startNext();
     else
         Q_EMIT operationsChanged(); // startNext announces its own pick
@@ -143,12 +148,14 @@ void FileOperations::enqueuePending(Pending pending)
 QVariantList FileOperations::operations() const
 {
     QVariantList out;
-    if (m_busy) {
+    if (m_busy || m_awaitingPassphrase) {
         QVariantMap running;
         running.insert(QStringLiteral("id"), double(m_current.id));
         running.insert(QStringLiteral("label"), m_current.request.describe());
-        running.insert(QStringLiteral("shortStatus"), m_current.request.shortStatus());
-        running.insert(QStringLiteral("state"), QStringLiteral("running"));
+        running.insert(QStringLiteral("shortStatus"), m_awaitingPassphrase
+            ? QStringLiteral("Waiting for archive password") : m_current.request.shortStatus());
+        running.insert(QStringLiteral("state"), m_awaitingPassphrase
+            ? QStringLiteral("waiting") : QStringLiteral("running"));
         running.insert(QStringLiteral("progress"), m_progress);
         running.insert(QStringLiteral("detail"), m_currentDetail);
         const qint64 elapsed = m_currentClock.isValid() ? m_currentClock.elapsed() : 0;
@@ -213,6 +220,10 @@ QString FileOperations::remainingText(qint64 done, qint64 total, qint64 elapsedM
 void FileOperations::cancelOperation(double id)
 {
     const quint64 wanted = quint64(id);
+    if (m_awaitingPassphrase && m_passphrasePending.id == wanted) {
+        declinePassphrase();
+        return;
+    }
     if (m_busy && m_current.id == wanted) {
         if (m_worker)
             m_worker->requestCancel();
@@ -229,6 +240,8 @@ void FileOperations::cancelOperation(double id)
 
 void FileOperations::startNext()
 {
+    if (m_awaitingPassphrase)
+        return;
     if (m_queue.isEmpty()) {
         setBusy(false);
         setStatus(QString(), 0.0);
@@ -237,6 +250,7 @@ void FileOperations::startNext()
     }
 
     m_current = m_queue.dequeue();
+    m_worker->prepare();
     setBusy(true);
     setStatus(m_current.request.describe(), 0.0);
     m_currentDetail.clear();
@@ -276,37 +290,56 @@ void FileOperations::handleSuccess(quint64 id, const FileOperationResult &result
     } else {
         // A redo records its undo again like any fresh operation — undo,
         // redo, undo walks the same step both ways.
-        recordUndo(m_current.request, result);
+        FileOperationResult combined = result;
+        combined.produced = m_current.completed.produced + result.produced;
+        combined.sources = m_current.completed.sources + result.sources;
+        recordUndo(m_current.originalRequest, combined);
     }
 
     Q_EMIT operationFinished(m_current.request.describe());
     startNext();
 }
 
-void FileOperations::handleFailure(quint64 id, const QString &message)
+void FileOperations::handleFailure(quint64 id, const QString &message,
+                                   const FileOperationResult &result)
 {
     if (id != m_current.id)
         return;
 
     setError(message);
 
-    // A failed operation records nothing: there is no reliable inverse for
-    // "half of it happened".
+    // Extraction lands each archive atomically, so completed archives remain
+    // safely undoable even if a later one is corrupt or is cancelled.
+    if (m_current.request.kind == FileOperationRequest::Extract) {
+        FileOperationResult combined = result;
+        combined.sources = m_current.completed.sources + result.sources;
+        combined.produced = m_current.completed.produced + result.produced;
+        auto completed = m_current.originalRequest;
+        completed.sources = combined.sources;
+        recordUndo(completed, combined);
+    }
     startNext();
 }
 
-void FileOperations::handlePassphraseNeeded(quint64 id, const QString &archiveName)
+void FileOperations::handlePassphraseNeeded(quint64 id, const QString &archiveName,
+                                           const FileOperationResult &completed)
 {
     if (id != m_current.id)
         return;
 
-    // Not an error — the request parks (its stale password cleared) while
-    // the window asks, and the queue moves on in the meantime.
-    m_passphraseRequest = m_current.request;
-    m_passphraseRequest.password.clear();
+    // Keep one batch parked, including outputs already extracted. Only the
+    // failing archive and its successors are retried. Queued work waits so a
+    // second password request cannot replace the first dialog's operation.
+    m_passphrasePending = m_current;
+    m_passphrasePending.completed.sources += completed.sources;
+    m_passphrasePending.completed.produced += completed.produced;
+    m_passphrasePending.request.sources = m_current.request.sources.mid(completed.sources.size());
+    m_passphrasePending.request.password.clear();
     m_awaitingPassphrase = true;
+    setBusy(false);
+    setStatus(QStringLiteral("Waiting for archive password"), 0.0);
+    Q_EMIT operationsChanged();
     Q_EMIT passphraseNeeded(archiveName);
-    startNext();
 }
 
 void FileOperations::recordUndo(const FileOperationRequest &request,
@@ -335,7 +368,7 @@ void FileOperations::recordUndo(const FileOperationRequest &request,
             return;
         entry.inverse.kind = FileOperationRequest::Rename;
         entry.inverse.sources = result.produced;
-        entry.inverse.destination = QFileInfo(result.sources.first()).fileName();
+        entry.inverse.destination = Location::displayName(result.sources.first());
         break;
 
     case FileOperationRequest::BatchRename:
@@ -346,7 +379,7 @@ void FileOperations::recordUndo(const FileOperationRequest &request,
         entry.inverse.kind = FileOperationRequest::BatchRename;
         entry.inverse.sources = result.produced;
         for (const QString &source : result.sources)
-            entry.inverse.names << QFileInfo(source).fileName();
+            entry.inverse.names << Location::displayName(source);
         break;
 
     case FileOperationRequest::Trash:
@@ -357,32 +390,12 @@ void FileOperations::recordUndo(const FileOperationRequest &request,
         break;
 
     case FileOperationRequest::Copy:
-        if (result.produced.isEmpty())
+    case FileOperationRequest::Move:
+        if (!result.undoable || result.transfers.isEmpty())
             return;
-        // Undoing a copy removes the copies, never the originals. Deleted
-        // rather than trashed: these files were created seconds ago by this
-        // app, trash is unavailable on some filesystems, and filling the bin
-        // with undone copies is not what anyone means by "undo".
-        entry.inverse.kind = FileOperationRequest::DeletePermanently;
-        entry.inverse.sources = result.produced;
+        entry.inverse.kind = FileOperationRequest::UndoTransfer;
+        entry.inverse.transfers = result.transfers;
         break;
-
-    case FileOperationRequest::Move: {
-        if (result.produced.isEmpty() || result.sources.isEmpty())
-            return;
-        // Move them back to where they came from. Only valid when every source
-        // shared a parent, which is true for a selection in one folder — and
-        // if it isn't, recording no undo is better than recording a wrong one.
-        const QString originalParent = QFileInfo(result.sources.first()).absolutePath();
-        for (const QString &source : result.sources) {
-            if (QFileInfo(source).absolutePath() != originalParent)
-                return;
-        }
-        entry.inverse.kind = FileOperationRequest::Move;
-        entry.inverse.sources = result.produced;
-        entry.inverse.destination = originalParent;
-        break;
-    }
 
     case FileOperationRequest::RestoreFromTrash:
         // A deliberate restore (not the undo of a trash — undos never record)
@@ -406,6 +419,7 @@ void FileOperations::recordUndo(const FileOperationRequest &request,
         entry.inverse.sources = result.produced;
         break;
 
+    case FileOperationRequest::UndoTransfer:
     case FileOperationRequest::RemoveCreatedFolder:
     case FileOperationRequest::DeletePermanently:
     case FileOperationRequest::EmptyTrash:
@@ -452,6 +466,8 @@ void FileOperations::redo()
 void FileOperations::cancel()
 {
     m_queue.clear();
+    if (m_awaitingPassphrase)
+        declinePassphrase();
     if (m_worker)
         m_worker->requestCancel();
     Q_EMIT operationsChanged();
@@ -531,18 +547,25 @@ void FileOperations::providePassphrase(const QString &password)
     if (!m_awaitingPassphrase)
         return;
     m_awaitingPassphrase = false;
-    FileOperationRequest request = m_passphraseRequest;
-    m_passphraseRequest = FileOperationRequest();
-    request.password = password;
-    Pending pending;
-    pending.request = request;
-    enqueuePending(pending);
+    Pending pending = m_passphrasePending;
+    m_passphrasePending = Pending();
+    pending.request.password = password;
+    m_queue.prepend(pending);
+    startNext();
 }
 
 void FileOperations::declinePassphrase()
 {
+    if (!m_awaitingPassphrase)
+        return;
     m_awaitingPassphrase = false;
-    m_passphraseRequest = FileOperationRequest();
+    // Completed archives still form one undoable operation when the rest of
+    // the batch is declined; redo repeats only that completed portion.
+    FileOperationRequest completed = m_passphrasePending.originalRequest;
+    completed.sources = m_passphrasePending.completed.sources;
+    recordUndo(completed, m_passphrasePending.completed);
+    m_passphrasePending = Pending();
+    startNext();
 }
 
 void FileOperations::extractHere(const QStringList &archivePaths, const QString &destinationDir)

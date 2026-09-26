@@ -67,6 +67,43 @@ GFile *uniqueChild(GFile *directory, const QString &name)
     return nullptr;
 }
 
+bool setDirectoryMode(GFile *file, quint32 mode, GCancellable *cancel, GError **error)
+{
+    GError *modeError = nullptr;
+    if (g_file_set_attribute_uint32(file, G_FILE_ATTRIBUTE_UNIX_MODE, mode,
+                                    G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS, cancel, &modeError))
+        return true;
+    // Some remote and removable filesystems have no Unix permission model.
+    // Still propagate permission-denied and I/O errors on those that do.
+    if (g_error_matches(modeError, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
+        g_clear_error(&modeError);
+        return true;
+    }
+    g_propagate_error(error, modeError);
+    return false;
+}
+
+// Copy only attributes supported by the destination backend. Directory size
+// is structural, not writable metadata (GIO includes it in the query list).
+bool copyDirectoryMetadata(GFile *source, GFile *destination, GCancellable *cancel,
+                           GError **error)
+{
+    const auto flags = GFileCopyFlags(G_FILE_COPY_ALL_METADATA | G_FILE_COPY_NOFOLLOW_SYMLINKS);
+    char *attributes = g_file_build_attribute_list_for_copy(destination, flags, cancel, error);
+    if (!attributes)
+        return false;
+    GFileInfo *info = g_file_query_info(source, attributes, G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                                       cancel, error);
+    g_free(attributes);
+    if (!info)
+        return false;
+    g_file_info_remove_attribute(info, G_FILE_ATTRIBUTE_STANDARD_SIZE);
+    const bool ok = g_file_set_attributes_from_info(destination, info,
+        G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS, cancel, error);
+    g_object_unref(info);
+    return ok;
+}
+
 struct ProgressContext {
     FileOperationWorker *worker;
     quint64 id;
@@ -91,7 +128,7 @@ void onCopyProgress(goffset current, goffset, gpointer data)
 } // namespace
 
 FileOperationWorker::FileOperationWorker(QObject *parent)
-    : QObject(parent)
+    : QObject(parent), m_cancellable(g_cancellable_new())
 {
 }
 
@@ -107,22 +144,24 @@ void FileOperationWorker::requestCancel()
         g_cancellable_cancel(m_cancellable);
 }
 
-void FileOperationWorker::resetCancellable()
+void FileOperationWorker::prepare()
 {
-    if (m_cancellable)
-        g_object_unref(m_cancellable);
-    m_cancellable = g_cancellable_new();
+    g_cancellable_reset(m_cancellable);
 }
 
 void FileOperationWorker::run(const FileOperationRequest &request, quint64 id)
 {
-    resetCancellable();
     m_needsPassphrase = false;
     m_passphraseArchive.clear();
 
     FileOperationResult result;
     QString error;
     bool ok = false;
+
+    if (g_cancellable_is_cancelled(m_cancellable)) {
+        Q_EMIT failed(id, QStringLiteral("Cancelled"), result);
+        return;
+    }
 
     switch (request.kind) {
     case FileOperationRequest::CreateFolder:
@@ -158,6 +197,9 @@ void FileOperationWorker::run(const FileOperationRequest &request, quint64 id)
     case FileOperationRequest::RemoveCreatedFolder:
         ok = doRemoveCreatedFolder(request, result, &error);
         break;
+    case FileOperationRequest::UndoTransfer:
+        ok = doUndoTransfer(request, &error, id);
+        break;
     case FileOperationRequest::Copy:
         ok = doTransfer(request, false, result, &error, id);
         break;
@@ -169,9 +211,9 @@ void FileOperationWorker::run(const FileOperationRequest &request, quint64 id)
     if (ok)
         Q_EMIT succeeded(id, result);
     else if (m_needsPassphrase)
-        Q_EMIT passphraseNeeded(id, m_passphraseArchive);
+        Q_EMIT passphraseNeeded(id, m_passphraseArchive, result);
     else
-        Q_EMIT failed(id, error.isEmpty() ? QStringLiteral("Operation failed") : error);
+        Q_EMIT failed(id, error.isEmpty() ? QStringLiteral("Operation failed") : error, result);
 }
 
 bool FileOperationWorker::doCreateFolder(const FileOperationRequest &request,
@@ -646,6 +688,11 @@ bool FileOperationWorker::buildPlan(GFile *source, GFile *destination, ConflictP
     GFile *target = g_object_ref(destination);
 
     if (exists(target)) {
+        if (policy == ConflictPolicy::Fail) {
+            *error = QStringLiteral("“%1” already exists").arg(pathOf(target));
+            g_object_unref(target);
+            return false;
+        }
         // Two directories with the same name merge, which is what every file
         // manager does and what users expect when dropping a folder onto one.
         const bool bothDirs = sourceIsDir && isDirectory(target);
@@ -655,6 +702,7 @@ bool FileOperationWorker::buildPlan(GFile *source, GFile *destination, ConflictP
                 *skipped << pathOf(source);
                 g_object_unref(target);
                 return true;
+            case ConflictPolicy::Fail: // handled above
             case ConflictPolicy::Replace:
                 break; // handled by the overwrite flag at copy time
             case ConflictPolicy::RenameNew: {
@@ -699,7 +747,7 @@ bool FileOperationWorker::buildPlan(GFile *source, GFile *destination, ConflictP
     }
 
     bool ok = true;
-    while (GFileInfo *info = g_file_enumerator_next_file(children, m_cancellable, nullptr)) {
+    while (GFileInfo *info = g_file_enumerator_next_file(children, m_cancellable, &gerror)) {
         GFile *childSource = g_file_get_child(source, g_file_info_get_name(info));
         GFile *childDestination = g_file_get_child(destination, g_file_info_get_name(info));
 
@@ -713,41 +761,38 @@ bool FileOperationWorker::buildPlan(GFile *source, GFile *destination, ConflictP
             break;
     }
 
+    if (gerror) {
+        *error = messageOf(gerror, "Could not read folder");
+        g_clear_error(&gerror);
+        ok = false;
+    }
     g_object_unref(children);
     return ok;
 }
 
 bool FileOperationWorker::doTransfer(const FileOperationRequest &request, bool removeSources,
-                                     FileOperationResult &result, QString *error, quint64 id)
+                                     FileOperationResult &result, QString *error, quint64 id,
+                                     const QStringList &targets)
 {
     GFile *destinationDir = Location::make(request.destination);
-
     QList<PlanItem> plan;
     qint64 totalBytes = 0;
-    QList<GFile *> sourcesToRemove;
-    bool ok = true;
-
-    auto cleanup = [&]() {
-        for (PlanItem &item : plan) {
+    auto cleanup = [&] {
+        for (const PlanItem &item : plan) {
             g_object_unref(item.source);
             g_object_unref(item.destination);
         }
-        for (GFile *file : sourcesToRemove)
-            g_object_unref(file);
         g_object_unref(destinationDir);
     };
+    auto fail = [&] { cleanup(); return false; };
 
-    for (const QString &path : request.sources) {
+    for (int i = 0; i < request.sources.size(); ++i) {
+        const QString &path = request.sources.at(i);
         GFile *source = Location::make(path);
-        char *base = g_file_get_basename(source);
-        const QString name = QString::fromUtf8(base ? base : "");
-        g_free(base);
-
-        GFile *destination = g_file_get_child(destinationDir, name.toUtf8().constData());
-
-        // Two guards that exist because getting them wrong destroys data:
-        // copying a folder into itself recurses forever, and copying a file
-        // onto itself truncates it.
+        const QString name = Location::displayName(path);
+        GFile *destination = targets.isEmpty()
+            ? g_file_get_child(destinationDir, name.toUtf8().constData())
+            : Location::make(targets.at(i));
         if (g_file_equal(source, destination)) {
             if (request.policy == ConflictPolicy::RenameNew) {
                 g_object_unref(destination);
@@ -759,159 +804,235 @@ bool FileOperationWorker::doTransfer(const FileOperationRequest &request, bool r
                 continue;
             }
         }
-
-        if (destination && g_file_has_prefix(destination, source)) {
-            *error = QStringLiteral("Cannot put “%1” inside itself").arg(name);
-            g_object_unref(destination);
+        if (!destination || g_file_has_prefix(destination, source)) {
+            *error = destination ? QStringLiteral("Cannot put “%1” inside itself").arg(name)
+                                 : QStringLiteral("Could not find a free name for “%1”").arg(name);
+            g_clear_object(&destination);
             g_object_unref(source);
-            ok = false;
-            break;
+            return fail();
         }
 
-        if (!destination) {
-            *error = QStringLiteral("Could not find a free name for “%1”").arg(name);
-            g_object_unref(source);
-            ok = false;
-            break;
-        }
-
-        // A move within one filesystem is a rename: instant, atomic, and it
-        // works for whole directories. Only when that is refused does this turn
-        // into copy-then-delete.
-        if (removeSources) {
+        const bool existed = exists(destination);
+        // Handle conflicts in the recursive plan, including directory merges.
+        // NO_FALLBACK_FOR_MOVE makes cross-device moves use our own journalled
+        // copy/delete path instead of GIO's file-only fallback.
+        if (removeSources && !existed) {
             GError *gerror = nullptr;
-            const GFileCopyFlags flags = GFileCopyFlags(
-                G_FILE_COPY_NOFOLLOW_SYMLINKS
-                | (request.policy == ConflictPolicy::Replace ? G_FILE_COPY_OVERWRITE
-                                                             : G_FILE_COPY_NONE));
-
+            const auto flags = GFileCopyFlags(G_FILE_COPY_NOFOLLOW_SYMLINKS
+                                               | G_FILE_COPY_NO_FALLBACK_FOR_MOVE);
             if (g_file_move(source, destination, flags, m_cancellable, nullptr, nullptr, &gerror)) {
                 result.sources << path;
                 result.produced << pathOf(destination);
+                result.transfers.append({path, pathOf(destination), false, true, true});
                 g_object_unref(destination);
                 g_object_unref(source);
-                g_clear_error(&gerror);
                 continue;
             }
-
-            const bool crossDevice = g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED);
-            const bool wouldClobber = g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_EXISTS);
+            const bool fallback = g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)
+                || g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_WOULD_RECURSE)
+                || g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_WOULD_MERGE)
+                || g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_EXISTS);
+            if (!fallback)
+                *error = messageOf(gerror, "Could not move");
             g_clear_error(&gerror);
-
-            if (wouldClobber && request.policy == ConflictPolicy::Skip) {
-                result.skipped << path;
+            if (!fallback) {
                 g_object_unref(destination);
                 g_object_unref(source);
-                continue;
+                return fail();
             }
-
-            if (!crossDevice && !wouldClobber) {
-                *error = QStringLiteral("Could not move “%1”").arg(name);
-                g_object_unref(destination);
-                g_object_unref(source);
-                ok = false;
-                break;
-            }
-            // Fall through to copy-then-delete.
         }
 
-        QStringList skipped;
-        const int planSizeBefore = plan.size();
-
-        if (!buildPlan(source, destination, request.policy, plan, &totalBytes, &skipped, error)) {
-            g_object_unref(destination);
-            g_object_unref(source);
-            ok = false;
-            break;
-        }
-
-        result.skipped << skipped;
-
-        // If the plan didn't grow, this source was skipped entirely — recording
-        // it as produced would make undo try to delete a file it never created.
-        if (plan.size() > planSizeBefore) {
-            result.sources << path;
-            result.produced << pathOf(plan.at(planSizeBefore).destination);
-            if (removeSources)
-                sourcesToRemove.append(g_object_ref(source));
-        }
-
+        const int before = plan.size();
+        const bool ok = buildPlan(source, destination, request.policy, plan, &totalBytes,
+                                  &result.skipped, error);
         g_object_unref(destination);
         g_object_unref(source);
+        if (!ok)
+            return fail();
+        if (plan.size() > before) {
+            result.sources << path;
+            result.produced << pathOf(plan.at(before).destination);
+        }
     }
 
-    if (!ok) {
-        cleanup();
-        return false;
-    }
-
-    // --- execute -----------------------------------------------------------
-
+    const int firstEntry = result.transfers.size();
     QElapsedTimer throttle;
     throttle.start();
     qint64 done = 0;
-
     for (const PlanItem &item : plan) {
         if (g_cancellable_is_cancelled(m_cancellable)) {
             *error = QStringLiteral("Cancelled");
-            cleanup();
-            return false;
+            return fail();
         }
-
-        char *base = g_file_get_basename(item.source);
-        const QString currentName = QString::fromUtf8(base ? base : "");
-        g_free(base);
-
         GError *gerror = nullptr;
-
+        const bool existed = exists(item.destination);
+        TransferEntry entry{pathOf(item.source), pathOf(item.destination), item.isDirectory,
+                            !existed, false};
         if (item.isDirectory) {
-            if (!g_file_make_directory(item.destination, m_cancellable, &gerror)
-                && !g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_EXISTS)) {
-                *error = messageOf(gerror, "Could not create folder");
-                g_clear_error(&gerror);
-                cleanup();
-                return false;
+            GFileInfo *info = g_file_query_info(item.source, G_FILE_ATTRIBUTE_UNIX_MODE,
+                G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS, m_cancellable, nullptr);
+            if (info) {
+                entry.mode = g_file_info_get_attribute_uint32(info, G_FILE_ATTRIBUTE_UNIX_MODE);
+                g_object_unref(info);
             }
-            g_clear_error(&gerror);
+            if (existed && !isDirectory(item.destination)) {
+                if (request.policy != ConflictPolicy::Replace
+                    || !g_file_delete(item.destination, m_cancellable, &gerror)) {
+                    *error = messageOf(gerror, "Destination is not a folder");
+                    g_clear_error(&gerror);
+                    return fail();
+                }
+                result.undoable = false;
+            }
+            if (!existed || !isDirectory(item.destination)) {
+                if (!g_file_make_directory(item.destination, m_cancellable, &gerror)) {
+                    *error = messageOf(gerror, "Could not create folder");
+                    g_clear_error(&gerror);
+                    return fail();
+                }
+                entry.created = true;
+                // Restrict the empty container before writing any contents.
+                // Final source metadata is applied after its children exist.
+                if (entry.mode && !setDirectoryMode(item.destination, 0700, m_cancellable, &gerror)) {
+                    *error = messageOf(gerror, "Could not set folder permissions");
+                    g_clear_error(&gerror);
+                    return fail();
+                }
+            }
+            result.transfers.append(entry);
             continue;
         }
-
-        ProgressContext ctx{ this, id, done, totalBytes, currentName, &throttle };
-        // NOFOLLOW_SYMLINKS: a symlink is copied as a symlink. Without it GIO
-        // dereferences, so copying a folder silently replaces its links with
-        // real copies of whatever they pointed at.
-        const GFileCopyFlags flags = GFileCopyFlags(
-            G_FILE_COPY_ALL_METADATA | G_FILE_COPY_NOFOLLOW_SYMLINKS
+        const QString currentName = Location::displayName(entry.source);
+        ProgressContext ctx{this, id, done, totalBytes, currentName, &throttle};
+        const auto flags = GFileCopyFlags(G_FILE_COPY_ALL_METADATA | G_FILE_COPY_NOFOLLOW_SYMLINKS
             | (request.policy == ConflictPolicy::Replace ? G_FILE_COPY_OVERWRITE : 0));
-
         if (!g_file_copy(item.source, item.destination, flags, m_cancellable,
                          onCopyProgress, &ctx, &gerror)) {
             if (g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_EXISTS)
                 && request.policy == ConflictPolicy::Skip) {
+                result.skipped << entry.source;
                 g_clear_error(&gerror);
-                result.skipped << pathOf(item.source);
                 continue;
             }
             *error = messageOf(gerror, "Could not copy");
             g_clear_error(&gerror);
-            cleanup();
-            return false;
+            return fail();
         }
-        g_clear_error(&gerror);
-
+        if (existed)
+            result.undoable = false;
+        result.transfers.append(entry);
         done += item.size;
         Q_EMIT progressed(id, done, totalBytes, currentName);
     }
 
-    // Sources are only removed once every byte is safely written. A move that
-    // fails halfway leaves the originals untouched.
-    for (GFile *source : sourcesToRemove) {
-        if (!deleteRecursively(source, error)) {
-            cleanup();
-            return false;
+    // Only new directories receive metadata. Merged containers belong to
+    // the destination and must retain their original permissions and owner.
+    for (int i = result.transfers.size() - 1; i >= firstEntry; --i) {
+        const auto *it = &result.transfers.at(i);
+        if (!it->directory || !it->created)
+            continue;
+        GFile *source = Location::make(it->source);
+        GFile *destination = Location::make(it->destination);
+        GError *gerror = nullptr;
+        const bool ok = copyDirectoryMetadata(source, destination, m_cancellable, &gerror);
+        g_object_unref(source);
+        g_object_unref(destination);
+        if (!ok) {
+            *error = messageOf(gerror, "Could not preserve folder metadata");
+            g_clear_error(&gerror);
+            return fail();
         }
     }
 
+    // Delete only entries actually copied, children first. In particular a
+    // skipped child remains at the source, along with its containing folders.
+    if (removeSources) {
+        for (int i = result.transfers.size() - 1; i >= firstEntry; --i) {
+            TransferEntry &entry = result.transfers[i];
+            GFile *source = Location::make(entry.source);
+            GError *gerror = nullptr;
+            entry.moved = g_file_delete(source, m_cancellable, &gerror);
+            g_object_unref(source);
+            const bool keptChildren = entry.directory
+                && g_error_matches(gerror, G_IO_ERROR, G_IO_ERROR_NOT_EMPTY)
+                && !result.skipped.isEmpty();
+            if (!entry.moved && !keptChildren) {
+                *error = messageOf(gerror, "Could not remove the original");
+                g_clear_error(&gerror);
+                return fail();
+            }
+            g_clear_error(&gerror);
+        }
+    }
     cleanup();
+    return true;
+}
+
+bool FileOperationWorker::doUndoTransfer(const FileOperationRequest &request,
+                                         QString *error, quint64 id)
+{
+    // Refuse conflicts before changing anything. Restoring a move must not
+    // silently choose a different name or overwrite a replacement original.
+    for (const TransferEntry &entry : request.transfers) {
+        if (!entry.moved)
+            continue;
+        GFile *source = Location::make(entry.source);
+        const bool occupied = exists(source);
+        g_object_unref(source);
+        if (occupied) {
+            *error = QStringLiteral("“%1” already exists").arg(entry.source);
+            return false;
+        }
+    }
+    for (const TransferEntry &entry : request.transfers) {
+        if (!entry.moved)
+            continue;
+        if (entry.directory) {
+            GFile *source = Location::make(entry.source);
+            GError *gerror = nullptr;
+            bool ok = g_file_make_directory(source, m_cancellable, &gerror);
+            if (ok && entry.mode)
+                ok = setDirectoryMode(source, 0700, m_cancellable, &gerror);
+            g_object_unref(source);
+            if (!ok) {
+                *error = messageOf(gerror, "Could not restore folder");
+                g_clear_error(&gerror);
+                return false;
+            }
+        } else {
+            FileOperationRequest move;
+            move.kind = FileOperationRequest::Move;
+            move.sources = {entry.destination};
+            move.destination = Location::parent(entry.source);
+            move.policy = ConflictPolicy::Fail;
+            FileOperationResult ignored;
+            if (!doTransfer(move, true, ignored, error, id, {entry.source}))
+                return false;
+        }
+    }
+    for (auto it = request.transfers.crbegin(); it != request.transfers.crend(); ++it) {
+        GError *gerror = nullptr;
+        if (it->directory && it->moved && it->mode) {
+            GFile *source = Location::make(it->source);
+            const bool ok = setDirectoryMode(source, it->mode, m_cancellable, &gerror);
+            g_object_unref(source);
+            if (!ok) {
+                *error = messageOf(gerror, "Could not restore folder permissions");
+                g_clear_error(&gerror);
+                return false;
+            }
+        }
+        if (!it->created || (it->moved && !it->directory))
+            continue;
+        GFile *destination = Location::make(it->destination);
+        // Nonrecursive: never remove files added to a copied folder later.
+        const bool ok = g_file_delete(destination, m_cancellable, &gerror);
+        g_object_unref(destination);
+        if (!ok) {
+            *error = messageOf(gerror, "Could not remove the copy");
+            g_clear_error(&gerror);
+            return false;
+        }
+    }
     return true;
 }

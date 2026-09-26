@@ -64,7 +64,7 @@ FocusScope {
     // Selection is a plain set keyed by filename. Names are stable within a
     // directory, so a selection survives re-sorting and in-place model updates
     // that row indices would not.
-    property var selectedNames: ({})
+    property var selectedNames: Object.create(null)
     property int currentIndex: -1
     property int anchorIndex: -1
 
@@ -277,20 +277,20 @@ FocusScope {
     function isSelected(name) { return selectedNames[name] === true; }
 
     function clearSelection() {
-        selectedNames = ({});
+        selectedNames = Object.create(null);
         anchorIndex = -1;
     }
 
     function selectOnly(name) {
-        const next = {};
+        const next = Object.create(null);
         next[name] = true;
         selectedNames = next;
         anchorIndex = files.proxyRowForName(name);
     }
 
     function toggleSelection(name) {
-        const next = Object.assign({}, selectedNames);
-        if (next[name])
+        const next = Object.assign(Object.create(null), selectedNames);
+        if (next[name] === true)
             delete next[name];
         else
             next[name] = true;
@@ -299,14 +299,14 @@ FocusScope {
     }
 
     function selectNames(names) {
-        const next = {};
+        const next = Object.create(null);
         for (let i = 0; i < names.length; ++i)
             next[names[i]] = true;
         selectedNames = next;
     }
 
     function selectRange(first, last) {
-        const next = {};
+        const next = Object.create(null);
         for (let row = Math.max(0, first); row <= Math.min(files.count - 1, last); ++row)
             next[files.valueAt(row, "name")] = true;
         selectedNames = next;
@@ -319,7 +319,7 @@ FocusScope {
     }
 
     function selectAll() {
-        const next = {};
+        const next = Object.create(null);
         for (let row = 0; row < files.count; ++row)
             next[files.valueAt(row, "name")] = true;
         selectedNames = next;
@@ -340,7 +340,7 @@ FocusScope {
         const paths = [];
         for (let row = 0; row < files.count; ++row) {
             const name = files.valueAt(row, "name");
-            if (selectedNames[name])
+            if (isSelected(name))
                 paths.push(actionPathAt(row));
         }
         return paths;
@@ -352,7 +352,7 @@ FocusScope {
         const items = [];
         for (let row = 0; row < files.count; ++row) {
             const name = files.valueAt(row, "name");
-            if (selectedNames[name]) {
+            if (isSelected(name)) {
                 items.push({ path: files.valueAt(row, "filePath"),
                              name: name,
                              modified: files.valueAt(row, "modified"),
@@ -370,7 +370,7 @@ FocusScope {
         let any = false;
         for (let row = 0; row < files.count; ++row) {
             const name = files.valueAt(row, "name");
-            if (!selectedNames[name])
+            if (!isSelected(name))
                 continue;
             if (!Platform.isArchiveType(files.valueAt(row, "contentType")))
                 return false;
@@ -385,7 +385,7 @@ FocusScope {
         const paths = [];
         for (let row = 0; row < files.count; ++row) {
             const name = files.valueAt(row, "name");
-            if (selectedNames[name]) {
+            if (isSelected(name)) {
                 const orig = files.valueAt(row, "origPath");
                 if (orig)
                     paths.push(orig);

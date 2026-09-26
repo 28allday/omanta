@@ -1,3 +1,4 @@
+#include <QSignalSpy>
 #include "SearchModel.h"
 #include "DirectoryModel.h"
 
@@ -16,6 +17,7 @@ class TestSearch : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void filtersRestartAnEmptySearch();
     void initTestCase();
 
     void findsMatchesRecursively();
@@ -271,6 +273,35 @@ void TestSearch::changingAFilterRerunsTheSearch()
     QTRY_VERIFY_WITH_TIMEOUT(!model.searching() && model.count() == 1, 10000);
     QCOMPARE(model.data(model.index(0), DirectoryModel::NameRole).toString(),
              QStringLiteral("pic.jpg"));
+}
+
+void TestSearch::filtersRestartAnEmptySearch()
+{
+    SearchModel model;
+    model.setRootLocation(m_dir.path());
+    model.setTypeFilter("pictures");
+    QSignalSpy state(&model, &SearchModel::searchingChanged);
+    model.setQuery("alpha");
+    QTRY_VERIFY_WITH_TIMEOUT(state.size() >= 2 && !model.searching(), 10000);
+    QCOMPARE(model.count(), 0);
+    model.setTypeFilter("any");
+    QTRY_VERIFY_WITH_TIMEOUT(!model.searching() && model.count() == 3, 10000);
+    model.setRecursion("never");
+    model.setQuery("alpha_two");
+    state.clear();
+    QTRY_VERIFY_WITH_TIMEOUT(state.size() >= 2 && !model.searching(), 10000);
+    QCOMPARE(model.count(), 0);
+    model.setRecursion("always");
+    QTRY_VERIFY_WITH_TIMEOUT(!model.searching() && model.count() == 1, 10000);
+    model.setDateRange("yesterday");
+    QTRY_VERIFY_WITH_TIMEOUT(!model.searching(), 10000);
+    // 'yesterday' is a since filter, so make the file older than its window.
+    utimbuf old{1, 1};
+    QVERIFY(utime(qPrintable(m_dir.filePath("sub/alpha_two.txt")), &old) == 0);
+    model.setDateRange("today");
+    QTRY_VERIFY_WITH_TIMEOUT(!model.searching() && model.count() == 0, 10000);
+    model.setDateRange("any");
+    QTRY_VERIFY_WITH_TIMEOUT(!model.searching() && model.count() == 1, 10000);
 }
 
 QTEST_GUILESS_MAIN(TestSearch)

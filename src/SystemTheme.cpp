@@ -214,7 +214,7 @@ void SystemTheme::watchThemeColors()
         m_watcher->addPath(path);
     QDir dir = QFileInfo(path).dir();
     while (!dir.exists() && !dir.isRoot())
-        dir.cdUp();
+        dir = QDir(QFileInfo(dir.absolutePath()).absolutePath());
     if (dir.exists())
         m_watcher->addPath(dir.absolutePath());
 }

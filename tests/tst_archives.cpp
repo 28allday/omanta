@@ -1,3 +1,6 @@
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <signal.h>
 #include "ArchiveEngine.h"
 #include "FileOperations.h"
 #include "TestFixture.h"
@@ -17,6 +20,7 @@ class TestArchives : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void finalizationFailureRemovesArchive();
     void initTestCase() { g_log_set_always_fatal(G_LOG_LEVEL_CRITICAL); }
 
     // engine: compress
@@ -485,6 +489,31 @@ void TestArchives::extractAndUndoRemovesTheOutput()
     // The archive and the originals survive the undo.
     QVERIFY(QFileInfo::exists(tree.filePath("stuff.zip")));
     QCOMPARE(read(tree.filePath("stuff/x.txt")), QStringLiteral("x"));
+}
+
+void TestArchives::finalizationFailureRemovesArchive()
+{
+    TempTree tree;
+    tree.writeFile("source", 100);
+    const QString archive = tree.filePath("failed.7z");
+    // 7z buffers its output until close. Limit writes only in a child so
+    // Qt's own output and the remaining test process are unaffected.
+    const pid_t child = fork();
+    QVERIFY(child >= 0);
+    if (child == 0) {
+        signal(SIGXFSZ, SIG_IGN);
+        struct rlimit limit{32, 32};
+        if (setrlimit(RLIMIT_FSIZE, &limit) != 0)
+            _exit(2);
+        QString error;
+        const bool ok = engineCompress({tree.filePath("source")}, archive, &error);
+        _exit(!ok && !error.isEmpty() && !QFileInfo::exists(archive) ? 0 : 1);
+    }
+    int status = 0;
+    QCOMPARE(waitpid(child, &status, 0), child);
+    QVERIFY(WIFEXITED(status));
+    QCOMPARE(WEXITSTATUS(status), 0);
+    QVERIFY(!QFileInfo::exists(archive));
 }
 
 QTEST_GUILESS_MAIN(TestArchives)

@@ -28,6 +28,8 @@ public:
     // Callable from any thread — GCancellable is thread-safe, and this is the
     // whole reason Cancel is instant rather than "after the current file".
     void requestCancel();
+    // Main thread, before dispatch; the token stays alive for the worker lifetime.
+    void prepare();
 
 public Q_SLOTS:
     void run(const FileOperationRequest &request, quint64 id);
@@ -35,10 +37,11 @@ public Q_SLOTS:
 Q_SIGNALS:
     void progressed(quint64 id, qint64 done, qint64 total, const QString &currentName);
     void succeeded(quint64 id, const FileOperationResult &result);
-    void failed(quint64 id, const QString &message);
+    void failed(quint64 id, const QString &message, const FileOperationResult &completed);
     // An extract needs a password (missing or wrong) — instead of failed(),
     // so the window can ask and replay rather than show an error.
-    void passphraseNeeded(quint64 id, const QString &archiveName);
+    void passphraseNeeded(quint64 id, const QString &archiveName,
+                          const FileOperationResult &completed);
 
 private:
     struct PlanItem {
@@ -65,14 +68,15 @@ private:
     bool doRemoveCreatedFolder(const FileOperationRequest &request, FileOperationResult &result,
                                QString *error);
     bool doTransfer(const FileOperationRequest &request, bool removeSources,
-                    FileOperationResult &result, QString *error, quint64 id);
+                    FileOperationResult &result, QString *error, quint64 id,
+                    const QStringList &targets = {});
+
+    bool doUndoTransfer(const FileOperationRequest &request, QString *error, quint64 id);
 
     bool buildPlan(GFile *source, GFile *destination, ConflictPolicy policy,
                    QList<PlanItem> &plan, qint64 *totalBytes, QStringList *skipped,
                    QString *error);
     bool deleteRecursively(GFile *file, QString *error);
-
-    void resetCancellable();
 
     GCancellable *m_cancellable = nullptr;
     // Set by doExtract when the failure is a missing/wrong archive password;

@@ -1,7 +1,7 @@
 #include "FileProperties.h"
+#include "Location.h"
 
 #include <QDir>
-#include <QFileInfo>
 #include <QUrl>
 #include <QVariantMap>
 
@@ -137,7 +137,7 @@ void FileProperties::load()
     m_outstandingInfo = int(m_paths.size());
 
     for (int index = 0; index < m_paths.size(); ++index) {
-        GFile *file = g_file_new_for_path(m_paths.at(index).toUtf8().constData());
+        GFile *file = Location::make(m_paths.at(index));
         auto *ctx = new CallbackCtx{ this, m_generation, index };
 
         // Symlinks are followed: what the user wants to know about a link is
@@ -207,7 +207,7 @@ void FileProperties::applyPrimaryInfo(GFileInfo *info)
     if (const char *display = g_file_info_get_display_name(info))
         m_displayName = QString::fromUtf8(display);
     else
-        m_displayName = QFileInfo(path).fileName();
+        m_displayName = Location::displayName(path);
 
     m_isDir = g_file_info_get_file_type(info) == G_FILE_TYPE_DIRECTORY;
     m_isSymlink = g_file_info_get_attribute_boolean(info,
@@ -220,7 +220,7 @@ void FileProperties::applyPrimaryInfo(GFileInfo *info)
             m_symlinkTarget = QString::fromUtf8(target);
     }
 
-    m_location = QFileInfo(path).absolutePath();
+    m_location = Location::parent(path);
 
     if (const char *type = g_file_info_get_content_type(info)) {
         m_contentType = QString::fromUtf8(type);
@@ -296,7 +296,7 @@ void FileProperties::startNextMeasure()
     m_liveFolders = 0;
     Q_EMIT measureChanged();
 
-    GFile *file = g_file_new_for_path(next.toUtf8().constData());
+    GFile *file = Location::make(next);
     auto *ctx = new CallbackCtx{ this, m_generation, 0 };
 
     // APPARENT_SIZE is the number a user recognises as "the size of this
@@ -537,7 +537,7 @@ bool FileProperties::launchWith(const QString &applicationId) const
 
     GList *files = nullptr;
     for (const QString &path : m_paths)
-        files = g_list_append(files, g_file_new_for_path(path.toUtf8().constData()));
+        files = g_list_append(files, Location::make(path));
 
     GError *error = nullptr;
     const bool ok = g_app_info_launch(application, files, nullptr, &error);
@@ -577,7 +577,7 @@ void FileProperties::applyMode(int mode)
     if (m_paths.size() != 1 || mode < 0)
         return;
 
-    GFile *file = g_file_new_for_path(m_paths.constFirst().toUtf8().constData());
+    GFile *file = Location::make(m_paths.constFirst());
     GFileInfo *info = g_file_info_new();
     g_file_info_set_attribute_uint32(info, G_FILE_ATTRIBUTE_UNIX_MODE, guint32(mode & 07777));
 

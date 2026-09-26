@@ -96,6 +96,12 @@ QVariant SearchModel::data(const QModelIndex &index, int role) const
     case DirectoryModel::IsSymlinkRole: return result.entry.isSymlink;
     case DirectoryModel::SizeRole: return result.entry.size;
     case DirectoryModel::ModifiedRole: return result.entry.modified;
+    case DirectoryModel::CreatedRole: return result.entry.created;
+    case DirectoryModel::AccessedRole: return result.entry.accessed;
+    case DirectoryModel::OwnerRole: return result.entry.owner;
+    case DirectoryModel::GroupRole: return result.entry.group;
+    case DirectoryModel::PermissionsRole: return result.entry.permissionString();
+    case DirectoryModel::TargetPathRole: return result.entry.targetPath;
     case DirectoryModel::ContentTypeRole: return result.entry.contentType;
     case DirectoryModel::TypeDescriptionRole: return result.entry.typeDescription;
     case DirectoryModel::IconSourceRole:
@@ -111,27 +117,7 @@ QVariant SearchModel::data(const QModelIndex &index, int role) const
 
 QHash<int, QByteArray> SearchModel::roleNames() const
 {
-    // Byte-for-byte the DirectoryModel names, so FileSortFilterModel and the
-    // views cannot tell which model is underneath.
-    return {
-        { DirectoryModel::NameRole, "name" },
-        { DirectoryModel::DisplayNameRole, "displayName" },
-        { DirectoryModel::FilePathRole, "filePath" },
-        { DirectoryModel::IsDirRole, "isDir" },
-        { DirectoryModel::IsHiddenRole, "isHidden" },
-        { DirectoryModel::IsBackupRole, "isBackup" },
-        { DirectoryModel::IsSymlinkRole, "isSymlink" },
-        { DirectoryModel::SizeRole, "size" },
-        { DirectoryModel::ModifiedRole, "modified" },
-        { DirectoryModel::ContentTypeRole, "contentType" },
-        { DirectoryModel::TypeDescriptionRole, "typeDescription" },
-        { DirectoryModel::IconSourceRole, "iconSource" },
-        { DirectoryModel::OrigPathRole, "origPath" },
-        { DirectoryModel::ItemCountRole, "itemCount" },
-        { DirectoryModel::ItemCountAllRole, "itemCountAll" },
-        { DirectoryModel::DepthRole, "depth" },
-        { DirectoryModel::ExpandedRole, "expanded" },
-    };
+    return DirectoryModel::fileRoles();
 }
 
 void SearchModel::setRootLocation(const QString &location)
@@ -172,7 +158,7 @@ void SearchModel::setRecursion(const QString &recursion)
     m_recursion = recursion;
     Q_EMIT recursionChanged();
     // A policy flip mid-search changes what the walk may visit — re-run.
-    if (m_searching || !m_results.isEmpty())
+    if (!m_query.isEmpty() && !m_root.isEmpty())
         restart();
 }
 
@@ -185,7 +171,7 @@ void SearchModel::setDateKind(const QString &kind)
         return;
     m_dateKind = clean;
     Q_EMIT dateKindChanged();
-    if (m_searching || !m_results.isEmpty())
+    if (!m_query.isEmpty() && !m_root.isEmpty())
         restart();
 }
 
@@ -199,7 +185,7 @@ void SearchModel::setDateRange(const QString &range)
         return;
     m_dateRange = clean;
     Q_EMIT dateRangeChanged();
-    if (m_searching || !m_results.isEmpty())
+    if (!m_query.isEmpty() && !m_root.isEmpty())
         restart();
 }
 
@@ -210,7 +196,7 @@ void SearchModel::setTypeFilter(const QString &filter)
         return;
     m_typeFilter = clean;
     Q_EMIT typeFilterChanged();
-    if (m_searching || !m_results.isEmpty())
+    if (!m_query.isEmpty() && !m_root.isEmpty())
         restart();
 }
 

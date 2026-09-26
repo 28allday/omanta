@@ -138,6 +138,12 @@ QVariant StarredModel::data(const QModelIndex &index, int role) const
     case DirectoryModel::IsSymlinkRole: return row.entry.isSymlink;
     case DirectoryModel::SizeRole: return row.entry.size;
     case DirectoryModel::ModifiedRole: return row.entry.modified;
+    case DirectoryModel::CreatedRole: return row.entry.created;
+    case DirectoryModel::AccessedRole: return row.entry.accessed;
+    case DirectoryModel::OwnerRole: return row.entry.owner;
+    case DirectoryModel::GroupRole: return row.entry.group;
+    case DirectoryModel::PermissionsRole: return row.entry.permissionString();
+    case DirectoryModel::TargetPathRole: return row.entry.targetPath;
     case DirectoryModel::ContentTypeRole: return row.entry.contentType;
     case DirectoryModel::TypeDescriptionRole: return row.entry.typeDescription;
     case DirectoryModel::IconSourceRole:
@@ -153,23 +159,5 @@ QVariant StarredModel::data(const QModelIndex &index, int role) const
 
 QHash<int, QByteArray> StarredModel::roleNames() const
 {
-    return {
-        { DirectoryModel::NameRole, "name" },
-        { DirectoryModel::DisplayNameRole, "displayName" },
-        { DirectoryModel::FilePathRole, "filePath" },
-        { DirectoryModel::IsDirRole, "isDir" },
-        { DirectoryModel::IsHiddenRole, "isHidden" },
-        { DirectoryModel::IsBackupRole, "isBackup" },
-        { DirectoryModel::IsSymlinkRole, "isSymlink" },
-        { DirectoryModel::SizeRole, "size" },
-        { DirectoryModel::ModifiedRole, "modified" },
-        { DirectoryModel::ContentTypeRole, "contentType" },
-        { DirectoryModel::TypeDescriptionRole, "typeDescription" },
-        { DirectoryModel::IconSourceRole, "iconSource" },
-        { DirectoryModel::OrigPathRole, "origPath" },
-        { DirectoryModel::ItemCountRole, "itemCount" },
-        { DirectoryModel::ItemCountAllRole, "itemCountAll" },
-        { DirectoryModel::DepthRole, "depth" },
-        { DirectoryModel::ExpandedRole, "expanded" },
-    };
+    return DirectoryModel::fileRoles();
 }

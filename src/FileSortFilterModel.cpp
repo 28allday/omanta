@@ -8,6 +8,10 @@ FileSortFilterModel::FileSortFilterModel(QObject *parent)
     // "file10" must sort after "file9", and case must not split the list into
     // two alphabets — this is the difference between feeling like a file
     // manager and feeling like `ls`.
+    // Qt's C-locale collator ignores numeric mode. Use a Unicode collator
+    // there too, while retaining the user's locale everywhere else.
+    if (m_collator.locale().language() == QLocale::C)
+        m_collator.setLocale(QLocale(QLocale::English, QLocale::UnitedStates));
     m_collator.setNumericMode(true);
     m_collator.setCaseSensitivity(Qt::CaseInsensitive);
 

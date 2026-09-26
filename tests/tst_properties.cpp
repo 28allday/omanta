@@ -1,3 +1,4 @@
+#include <QUrl>
 #include "FileProperties.h"
 #include "TestFixture.h"
 
@@ -17,6 +18,7 @@ class TestProperties : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void fileUrisSupportPropertiesAndPermissions();
     // GIO's getters are not queries: several of them assert the attribute is
     // present and log a CRITICAL when it is not, then return null. Reading one
     // wrongly therefore produces a working-looking app that spews to stderr —
@@ -387,6 +389,28 @@ void TestProperties::survivesBeingDestroyedMidMeasurement()
     // The walk's callbacks land after the object is gone. Nothing should touch
     // it — this test is here to fail under ASan if that ever stops being true.
     QTest::qWait(300);
+}
+
+void TestProperties::fileUrisSupportPropertiesAndPermissions()
+{
+    TempTree tree;
+    const QString path = tree.writeFile("folder/space #.txt", 123);
+    FileProperties properties;
+    properties.setPaths({QUrl::fromLocalFile(path).toString()});
+    QVERIFY(settle(properties));
+    QVERIFY2(properties.errorMessage().isEmpty(), qPrintable(properties.errorMessage()));
+    QCOMPARE(properties.size(), 123);
+    QCOMPARE(properties.displayName(), QStringLiteral("space #.txt"));
+    QCOMPARE(properties.location(), tree.filePath("folder"));
+    properties.applyMode(0600);
+    QTRY_COMPARE(properties.mode(), 0600);
+    struct stat info{};
+    QVERIFY(::stat(qPrintable(path), &info) == 0);
+    QCOMPARE(info.st_mode & 0777, mode_t(0600));
+    properties.setPaths({QUrl::fromLocalFile(tree.filePath("folder")).toString()});
+    QVERIFY(settle(properties));
+    QCOMPARE(properties.fileCount(), 1);
+    QCOMPARE(properties.size(), 123);
 }
 
 QTEST_GUILESS_MAIN(TestProperties)

@@ -14,7 +14,8 @@ path="$2"
 # newline — which would let a crafted name append commands of its own and ask
 # the daemon for a link to something the user never selected.
 case "$path" in
-    *"$(printf '\n')"*) echo "omanta-dropbox-link: refusing a path containing a newline" >&2; exit 2 ;;
+    *"
+"*) echo "omanta-dropbox-link: refusing a path containing a newline" >&2; exit 2 ;;
 esac
 
 link=$(printf 'get_shared_link\npath\t%s\ndone\n' "$path" \

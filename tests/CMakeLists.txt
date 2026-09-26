@@ -56,6 +56,7 @@ omanta_test(tst_thumbnails
 )
 
 omanta_test(tst_properties
+    ${CMAKE_SOURCE_DIR}/src/Location.cpp
     ${CMAKE_SOURCE_DIR}/src/FileProperties.cpp
 )
 
@@ -132,3 +133,11 @@ omanta_test(tst_fts
     ${CMAKE_SOURCE_DIR}/src/FileEntry.cpp
     ${CMAKE_SOURCE_DIR}/src/Location.cpp
 )
+
+# Full application QML integration; never opens a window on the user's desktop.
+target_link_libraries(tst_qmlviews PRIVATE Qt6::Test)
+add_test(NAME tst_qmlviews COMMAND tst_qmlviews)
+set_tests_properties(tst_qmlviews PROPERTIES TIMEOUT 60
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+add_test(NAME tst_dropbox_helper COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tst_dropbox_helper.sh
+    ${CMAKE_SOURCE_DIR}/packaging/bin/omanta-dropbox-link)

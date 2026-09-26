@@ -26,6 +26,10 @@ BatchRenamer::BatchRenamer(QObject *parent)
     : QObject(parent)
 {
     // The proxy's ordering rules: numeric, case-insensitive.
+    // Qt's C-locale collator ignores numeric mode. Use a Unicode collator
+    // there too, while retaining the user's locale everywhere else.
+    if (m_collator.locale().language() == QLocale::C)
+        m_collator.setLocale(QLocale(QLocale::English, QLocale::UnitedStates));
     m_collator.setNumericMode(true);
     m_collator.setCaseSensitivity(Qt::CaseInsensitive);
 

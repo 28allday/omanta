@@ -133,9 +133,9 @@ FocusScope {
 
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: splitHandle.SplitView.pressed ? 2 : 1
+                width: splitHandle.SplitHandle.pressed ? 2 : 1
                 height: parent.height
-                color: splitHandle.SplitView.pressed || splitHandle.SplitView.hovered
+                color: splitHandle.SplitHandle.pressed || splitHandle.SplitHandle.hovered
                        ? Colors.accent : Colors.border
             }
         }

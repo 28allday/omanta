@@ -96,31 +96,7 @@ QVariant DirectoryModel::data(const QModelIndex &index, int role) const
 
 QHash<int, QByteArray> DirectoryModel::roleNames() const
 {
-    return {
-        { NameRole, "name" },
-        { DisplayNameRole, "displayName" },
-        { FilePathRole, "filePath" },
-        { IsDirRole, "isDir" },
-        { IsHiddenRole, "isHidden" },
-        { IsBackupRole, "isBackup" },
-        { IsSymlinkRole, "isSymlink" },
-        { SizeRole, "size" },
-        { ModifiedRole, "modified" },
-        { CreatedRole, "created" },
-        { AccessedRole, "accessed" },
-        { OwnerRole, "owner" },
-        { GroupRole, "group" },
-        { PermissionsRole, "permissions" },
-        { ContentTypeRole, "contentType" },
-        { TypeDescriptionRole, "typeDescription" },
-        { IconSourceRole, "iconSource" },
-        { OrigPathRole, "origPath" },
-        { TargetPathRole, "targetPath" },
-        { ItemCountRole, "itemCount" },
-        { ItemCountAllRole, "itemCountAll" },
-        { DepthRole, "depth" },
-        { ExpandedRole, "expanded" },
-    };
+    return fileRoles();
 }
 
 QString DirectoryModel::filePathAt(int row) const

@@ -122,7 +122,7 @@ bool writeEntry(struct archive *writer, const Source &source, QString *error,
             }
             if (got == 0)
                 break;
-            if (archive_write_data(writer, buffer, size_t(got)) < 0) {
+            if (archive_write_data(writer, buffer, size_t(got)) != got) {
                 *error = archiveError(writer, "Could not write the archive");
                 archive_entry_free(entry);
                 return false;
@@ -289,8 +289,14 @@ bool compress(const QStringList &sources, const QString &archivePath, QString *e
         }
     }
 
-    archive_write_close(writer);
-    archive_write_free(writer);
+    if (archive_write_close(writer) != ARCHIVE_OK && ok) {
+        *error = archiveError(writer, "Could not finish the archive");
+        ok = false;
+    }
+    if (archive_write_free(writer) != ARCHIVE_OK && ok) {
+        *error = QStringLiteral("Could not finish the archive");
+        ok = false;
+    }
 
     // A failed or cancelled compression leaves no half-written archive to be
     // mistaken for a good one later.

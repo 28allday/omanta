@@ -14,8 +14,7 @@ pkg_check_modules(TINYSPARQL REQUIRED IMPORTED_TARGET tinysparql-3.0)
 qt_standard_project_setup(REQUIRES 6.5)
 qt_policy(SET QTP0004 NEW)
 
-qt_add_executable(omanta
-    src/main.cpp
+set(OMANTA_SOURCES
     src/Application.cpp
     src/Application.h
     src/ArchiveEngine.cpp
@@ -75,33 +74,33 @@ qt_add_executable(omanta
 
 set_source_files_properties(qml/Colors.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
-qt_add_qml_module(omanta
-    URI Omanta
-    VERSION 1.0
-    QML_FILES
-        qml/Main.qml
-        qml/Tab.qml
-        qml/TabPanes.qml
-        qml/OpsPie.qml
-        qml/PathBar.qml
-        qml/Sidebar.qml
-        qml/FileListView.qml
-        qml/FileIconView.qml
-        qml/ToolbarButton.qml
-        qml/PromptDialog.qml
-        qml/PreferencesDialog.qml
-        qml/VisibleColumnsDialog.qml
-        qml/ShortcutsDialog.qml
-        qml/AboutDialog.qml
-        qml/BatchRenameDialog.qml
-        qml/CompressDialog.qml
-        qml/FolderPickerDialog.qml
-        qml/ConfirmDialog.qml
-        qml/ConflictDialog.qml
-        qml/CredentialDialog.qml
-        qml/PropertiesDialog.qml
-        qml/Colors.qml
+set(OMANTA_QML_FILES
+    qml/Main.qml
+    qml/Tab.qml
+    qml/TabPanes.qml
+    qml/OpsPie.qml
+    qml/PathBar.qml
+    qml/Sidebar.qml
+    qml/FileListView.qml
+    qml/FileIconView.qml
+    qml/ToolbarButton.qml
+    qml/PromptDialog.qml
+    qml/PreferencesDialog.qml
+    qml/VisibleColumnsDialog.qml
+    qml/ShortcutsDialog.qml
+    qml/AboutDialog.qml
+    qml/BatchRenameDialog.qml
+    qml/CompressDialog.qml
+    qml/FolderPickerDialog.qml
+    qml/ConfirmDialog.qml
+    qml/ConflictDialog.qml
+    qml/CredentialDialog.qml
+    qml/PropertiesDialog.qml
+    qml/Colors.qml
 )
+
+qt_add_executable(omanta src/main.cpp ${OMANTA_SOURCES})
+qt_add_qml_module(omanta URI Omanta VERSION 1.0 QML_FILES ${OMANTA_QML_FILES})
 
 # GIO's gdbusintrospection.h declares a struct member named `signals`, which
 # Qt's unprefixed keyword macros turn into a syntax error. Any Qt+GIO project
@@ -113,7 +112,7 @@ target_compile_definitions(omanta PRIVATE QT_NO_KEYWORDS)
 # the registrations silently compile to nothing.
 target_include_directories(omanta PRIVATE src)
 
-target_link_libraries(omanta PRIVATE
+set(OMANTA_LIBRARIES
     Qt6::Core
     Qt6::Gui
     Qt6::Quick
@@ -125,9 +124,21 @@ target_link_libraries(omanta PRIVATE
     PkgConfig::TINYSPARQL
 )
 
+target_link_libraries(omanta PRIVATE ${OMANTA_LIBRARIES})
+
 option(OMANTA_BUILD_TESTS "Build the model test suite" ON)
 if(OMANTA_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
     enable_testing()
+    # Exercise the real QML and generated type registrations in a separate
+    # executable, using the same source lists as the application.
+    qt_add_executable(tst_qmlviews tests/tst_qmlviews.cpp ${OMANTA_SOURCES})
+    qt_add_qml_module(tst_qmlviews URI Omanta VERSION 1.0
+        OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests/qml/Omanta
+        QML_FILES ${OMANTA_QML_FILES})
+    target_compile_definitions(tst_qmlviews PRIVATE QT_NO_KEYWORDS)
+    target_include_directories(tst_qmlviews PRIVATE src)
+    target_link_libraries(tst_qmlviews PRIVATE ${OMANTA_LIBRARIES})
     add_subdirectory(tests)
 endif()
 

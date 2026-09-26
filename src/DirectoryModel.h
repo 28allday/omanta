@@ -73,6 +73,36 @@ public:
     QVariant data(const QModelIndex &index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
 
+    // Shared contract for every model consumed by the file views.
+    static QHash<int, QByteArray> fileRoles()
+    {
+        return {
+            { NameRole, "name" },
+            { DisplayNameRole, "displayName" },
+            { FilePathRole, "filePath" },
+            { IsDirRole, "isDir" },
+            { IsHiddenRole, "isHidden" },
+            { IsBackupRole, "isBackup" },
+            { IsSymlinkRole, "isSymlink" },
+            { SizeRole, "size" },
+            { ModifiedRole, "modified" },
+            { CreatedRole, "created" },
+            { AccessedRole, "accessed" },
+            { OwnerRole, "owner" },
+            { GroupRole, "group" },
+            { PermissionsRole, "permissions" },
+            { ContentTypeRole, "contentType" },
+            { TypeDescriptionRole, "typeDescription" },
+            { IconSourceRole, "iconSource" },
+            { OrigPathRole, "origPath" },
+            { TargetPathRole, "targetPath" },
+            { ItemCountRole, "itemCount" },
+            { ItemCountAllRole, "itemCountAll" },
+            { DepthRole, "depth" },
+            { ExpandedRole, "expanded" },
+        };
+    }
+
     QString path() const { return m_path; }
     void setPath(const QString &path);
     bool countItems() const { return m_countItems; }

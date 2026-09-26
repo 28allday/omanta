@@ -1,3 +1,4 @@
+#include <QDir>
 #include "SystemTheme.h"
 
 #include <QFile>
@@ -13,6 +14,7 @@ class TestTheme : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void missingAncestorsAreWatched();
     void parsesFlatToml();
     void parseIgnoresJunk();
 
@@ -166,6 +168,22 @@ void TestTheme::themeSwitchIsPickedUpLive()
     QVERIFY(spy.wait(5000));
     QCOMPARE(theme.accentColor(), QColor("#a6e3a1"));
     QVERIFY(!theme.darkMode()); // the rewrite flipped it light
+}
+
+void TestTheme::missingAncestorsAreWatched()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("missing/parent/colors.toml");
+    qputenv("OMANTA_COLORS_FILE", path.toUtf8());
+    SystemTheme theme;
+    QVERIFY(!theme.hasThemeColors());
+    QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+    QFile colors(path);
+    QVERIFY(colors.open(QIODevice::WriteOnly));
+    colors.write("accent = \"#69c3ff\"\nbackground = \"#111422\"\nforeground = \"#bcc1dc\"\n");
+    colors.close();
+    QTRY_VERIFY_WITH_TIMEOUT(theme.hasThemeColors(), 5000);
+    QCOMPARE(theme.accentColor(), QColor("#69c3ff"));
 }
 
 QTEST_GUILESS_MAIN(TestTheme)

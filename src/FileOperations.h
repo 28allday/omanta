@@ -144,13 +144,16 @@ Q_SIGNALS:
 private Q_SLOTS:
     void handleProgress(quint64 id, qint64 done, qint64 total, const QString &currentName);
     void handleSuccess(quint64 id, const FileOperationResult &result);
-    void handleFailure(quint64 id, const QString &message);
-    void handlePassphraseNeeded(quint64 id, const QString &archiveName);
+    void handleFailure(quint64 id, const QString &message, const FileOperationResult &result);
+    void handlePassphraseNeeded(quint64 id, const QString &archiveName,
+                                const FileOperationResult &completed);
 
 private:
     struct Pending {
         quint64 id = 0;
         FileOperationRequest request;
+        FileOperationRequest originalRequest;
+        FileOperationResult completed;
         bool isUndo = false;
         bool isRedo = false;
         // Set on an undo: what becomes redoable once the undo succeeds. A
@@ -183,9 +186,10 @@ private:
 
     QQueue<Pending> m_queue;
     Pending m_current;
-    // The extract parked while the window asks for its password.
+    // The extract parked while the window asks for its password. The queue
+    // waits behind it, preserving one prompt and the partial undo journal.
     bool m_awaitingPassphrase = false;
-    FileOperationRequest m_passphraseRequest;
+    Pending m_passphrasePending;
     bool m_busy = false;
     quint64 m_nextId = 1;
 

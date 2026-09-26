@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QSignalSpy>
 #include <QTest>
+#include <sys/stat.h>
 
 // Every destructive path in the app, exercised against throwaway trees before
 // it is ever pointed at real data.
@@ -18,6 +19,22 @@ class TestFileOperations : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void decliningBatchPasswordKeepsPartialUndo();
+    void queuedPasswordRequestsStaySeparate();
+    void failedBatchExtractionKeepsPartialUndo();
+    void undoOfMoveRefusesAnOccupiedOriginal();
+    void undoOfCopyKeepsLaterAdditions();
+
+    void undoOfMergedCopyKeepsExistingContents();
+    void moveConflictUndoRestoresExactName();
+    void undoOfMergedMoveKeepsExistingContents();
+    void crossDeviceDirectoryMoveAndUndo();
+    void copyPreservesDirectoryModes();
+    void moveSkipLeavesSkippedOriginals();
+    void replacementDoesNotOfferDestructiveUndo();
+    void cancelBeforeDispatchIsHonoured();
+    void batchExtractionResumesAtEachPassword();
+
     void createsAFolder();
     void undoOfCreateRemovesIt();
 
@@ -900,6 +917,328 @@ void TestFileOperations::redoChainsThroughSeveralUndos()
     QVERIFY(QFileInfo::exists(tree.filePath("three.txt")));
     QVERIFY(!ops.canRedo());
     QVERIFY(ops.canUndo());
+}
+
+void TestFileOperations::undoOfMergedCopyKeepsExistingContents()
+{
+    TempTree tree;
+    tree.writeFile("src/folder/new.txt", 12);
+    tree.writeFile("src/folder/nested/new.txt", 13);
+    tree.writeFile("dst/folder/precious.txt", 37);
+    tree.writeFile("dst/folder/nested/precious.txt", 38);
+    FileOperations ops;
+    ops.copy({tree.filePath("src/folder")}, tree.filePath("dst"));
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(read(tree.filePath("dst/folder/precious.txt")).size(), 37);
+    QCOMPARE(read(tree.filePath("dst/folder/nested/precious.txt")).size(), 38);
+    QVERIFY(!QFileInfo::exists(tree.filePath("dst/folder/new.txt")));
+    QVERIFY(!QFileInfo::exists(tree.filePath("dst/folder/nested/new.txt")));
+    ops.redo();
+    QVERIFY(settle(ops));
+    QCOMPARE(read(tree.filePath("dst/folder/new.txt")).size(), 12);
+}
+
+void TestFileOperations::moveConflictUndoRestoresExactName()
+{
+    TempTree tree;
+    tree.writeFile("src/a.txt", 12);
+    tree.writeFile("dst/a.txt", 37);
+    FileOperations ops;
+    ops.move({tree.filePath("src/a.txt")}, tree.filePath("dst"));
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(read(tree.filePath("src/a.txt")).size(), 12);
+    QCOMPARE(read(tree.filePath("dst/a.txt")).size(), 37);
+    QVERIFY(!QFileInfo::exists(tree.filePath("dst/a (copy).txt")));
+    ops.redo();
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(read(tree.filePath("dst/a (copy).txt")).size(), 12);
+}
+
+void TestFileOperations::undoOfMergedMoveKeepsExistingContents()
+{
+    TempTree tree;
+    tree.writeFile("src/folder/new.txt", 12);
+    tree.writeFile("src/folder/nested/new.txt", 13);
+    tree.writeFile("src/folder/whole/new.txt", 14);
+    tree.writeFile("dst/folder/precious.txt", 37);
+    tree.writeFile("dst/folder/nested/precious.txt", 38);
+    FileOperations ops;
+    ops.move({tree.filePath("src/folder")}, tree.filePath("dst"), FileOperations::Replace);
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QVERIFY(!QFileInfo::exists(tree.filePath("src/folder")));
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(read(tree.filePath("src/folder/nested/new.txt")).size(), 13);
+    QCOMPARE(read(tree.filePath("src/folder/whole/new.txt")).size(), 14);
+    QCOMPARE(read(tree.filePath("dst/folder/precious.txt")).size(), 37);
+    QCOMPARE(read(tree.filePath("dst/folder/nested/precious.txt")).size(), 38);
+    QVERIFY(!QFileInfo::exists(tree.filePath("dst/folder/whole")));
+    ops.redo();
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QVERIFY(!QFileInfo::exists(tree.filePath("src/folder")));
+}
+
+void TestFileOperations::crossDeviceDirectoryMoveAndUndo()
+{
+    TempTree tree;
+    QTemporaryDir destination(QStringLiteral("/dev/shm/omanta-test-XXXXXX"));
+    if (!destination.isValid())
+        QSKIP("No writable /dev/shm for a second filesystem");
+    struct stat srcStat{}, dstStat{};
+    QVERIFY(::stat(qPrintable(tree.path()), &srcStat) == 0);
+    QVERIFY(::stat(qPrintable(destination.path()), &dstStat) == 0);
+    if (srcStat.st_dev == dstStat.st_dev)
+        QSKIP("/tmp and /dev/shm are the same filesystem");
+    tree.writeFile("folder/nested/file.txt", 123);
+    QVERIFY(::chmod(qPrintable(tree.filePath("folder")), 0700) == 0);
+    FileOperations ops;
+    ops.move({tree.filePath("folder")}, destination.path());
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(read(destination.filePath("folder/nested/file.txt")).size(), 123);
+    QVERIFY(!QFileInfo::exists(tree.filePath("folder")));
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(read(tree.filePath("folder/nested/file.txt")).size(), 123);
+    QVERIFY(!QFileInfo::exists(destination.filePath("folder")));
+    QVERIFY(::stat(qPrintable(tree.filePath("folder")), &srcStat) == 0);
+    QCOMPARE(srcStat.st_mode & 0777, mode_t(0700));
+}
+
+void TestFileOperations::copyPreservesDirectoryModes()
+{
+    TempTree tree;
+    tree.writeFile("src/private/nested/file", 9);
+    tree.makeDir("dst");
+    QVERIFY(::chmod(qPrintable(tree.filePath("src/private")), 0700) == 0);
+    QVERIFY(::chmod(qPrintable(tree.filePath("src/private/nested")), 0750) == 0);
+    FileOperations ops;
+    ops.copy({tree.filePath("src/private")}, tree.filePath("dst"));
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    struct stat info{};
+    QVERIFY(::stat(qPrintable(tree.filePath("dst/private")), &info) == 0);
+    QCOMPARE(info.st_mode & 0777, mode_t(0700));
+    QVERIFY(::stat(qPrintable(tree.filePath("dst/private/nested")), &info) == 0);
+    QCOMPARE(info.st_mode & 0777, mode_t(0750));
+    QVERIFY(::chmod(qPrintable(tree.filePath("dst/private")), 0711) == 0);
+    ops.copy({tree.filePath("src/private")}, tree.filePath("dst"));
+    QVERIFY(settle(ops));
+    QVERIFY(::stat(qPrintable(tree.filePath("dst/private")), &info) == 0);
+    QCOMPARE(info.st_mode & 0777, mode_t(0711));
+}
+
+void TestFileOperations::moveSkipLeavesSkippedOriginals()
+{
+    TempTree tree;
+    tree.writeFile("src/folder/keep", 12);
+    tree.writeFile("src/folder/move", 13);
+    tree.writeFile("dst/folder/keep", 37);
+    FileOperations ops;
+    ops.move({tree.filePath("src/folder")}, tree.filePath("dst"), FileOperations::Skip);
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(read(tree.filePath("src/folder/keep")).size(), 12);
+    QCOMPARE(read(tree.filePath("dst/folder/keep")).size(), 37);
+    QCOMPARE(read(tree.filePath("dst/folder/move")).size(), 13);
+    QVERIFY(!QFileInfo::exists(tree.filePath("src/folder/move")));
+    ops.undo();
+    QVERIFY(settle(ops));
+    QCOMPARE(read(tree.filePath("src/folder/move")).size(), 13);
+    QCOMPARE(read(tree.filePath("dst/folder/keep")).size(), 37);
+}
+
+void TestFileOperations::replacementDoesNotOfferDestructiveUndo()
+{
+    TempTree tree;
+    tree.writeFile("src/a", 12);
+    tree.writeFile("dst/a", 37);
+    FileOperations ops;
+    ops.copy({tree.filePath("src/a")}, tree.filePath("dst"), FileOperations::Replace);
+    QVERIFY(settle(ops));
+    QCOMPARE(read(tree.filePath("dst/a")).size(), 12);
+    QVERIFY(!ops.canUndo());
+}
+
+void TestFileOperations::cancelBeforeDispatchIsHonoured()
+{
+    TempTree tree;
+    FileOperations ops;
+    // Cancel synchronously as the operation becomes busy, before its queued
+    // run() starts. This exercises the startup race deterministically.
+    auto connection = connect(&ops, &FileOperations::busyChanged, &ops, [&] {
+        if (ops.busy())
+            ops.cancel();
+    });
+    ops.createFolder(tree.path(), "cancelled");
+    QVERIFY(settle(ops));
+    QVERIFY(!QFileInfo::exists(tree.filePath("cancelled")));
+    QVERIFY(!ops.canUndo());
+    disconnect(connection);
+    ops.clearError();
+    ops.createFolder(tree.path(), "next");
+    QVERIFY(settle(ops));
+    QVERIFY(QFileInfo::exists(tree.filePath("next")));
+    QVERIFY(ops.lastError().isEmpty());
+}
+
+void TestFileOperations::batchExtractionResumesAtEachPassword()
+{
+    TempTree tree;
+    tree.makeDir("out");
+    const QStringList names{"plain", "first", "second"};
+    const QStringList passwords{"", "one", "two"};
+    QStringList archives;
+    for (int i = 0; i < names.size(); ++i) {
+        tree.writeFile(names[i], 20 + i);
+        const QString archive = tree.filePath(names[i] + ".zip");
+        QString error;
+        QVERIFY2(ArchiveEngine::compress({tree.filePath(names[i])}, archive, &error,
+            [] { return false; }, [](qint64, qint64) {}, passwords[i]), qPrintable(error));
+        archives << archive;
+    }
+    FileOperations ops;
+    QSignalSpy asked(&ops, &FileOperations::passphraseNeeded);
+    ops.extractHere(archives, tree.filePath("out"));
+    // A second queued operation must not displace the parked request.
+    ops.createFolder(tree.path(), "after");
+    QVERIFY(settle(ops));
+    QCOMPARE(asked.size(), 1);
+    QCOMPARE(asked.last().first().toString(), QStringLiteral("first.zip"));
+    QVERIFY(!QFileInfo::exists(tree.filePath("after")));
+    ops.providePassphrase("one");
+    QVERIFY(settle(ops));
+    QCOMPARE(asked.size(), 2);
+    QCOMPARE(asked.last().first().toString(), QStringLiteral("second.zip"));
+    ops.providePassphrase("two");
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(asked.size(), 2);
+    QCOMPARE(QDir(tree.filePath("out")).entryList(QDir::Files).size(), 3);
+    QVERIFY(QFileInfo::exists(tree.filePath("after")));
+    ops.undo(); // queued mkdir
+    QVERIFY(settle(ops));
+    ops.undo(); // all three extracted archives form one undo step
+    QVERIFY(settle(ops));
+    QVERIFY(QDir(tree.filePath("out")).isEmpty());
+}
+
+void TestFileOperations::decliningBatchPasswordKeepsPartialUndo()
+{
+    TempTree tree;
+    tree.writeFile("secret.txt", 9);
+    tree.makeDir("out");
+    QVERIFY(makeLockedZip(tree, "locked.zip"));
+    QString error;
+    QVERIFY(ArchiveEngine::compress({tree.filePath("secret.txt")}, tree.filePath("plain.zip"),
+        &error, [] { return false; }, [](qint64, qint64) {}));
+    FileOperations ops;
+    ops.extractHere({tree.filePath("plain.zip"), tree.filePath("locked.zip")}, tree.filePath("out"));
+    QVERIFY(settle(ops));
+    QCOMPARE(ops.operations().size(), 1);
+    QCOMPARE(ops.operations().first().toMap().value("state").toString(), QStringLiteral("waiting"));
+    ops.cancelOperation(ops.operations().first().toMap().value("id").toDouble());
+    QVERIFY(ops.operations().isEmpty());
+    QVERIFY(ops.canUndo());
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY(QDir(tree.filePath("out")).isEmpty());
+    ops.redo();
+    QVERIFY(settle(ops));
+    QVERIFY2(ops.lastError().isEmpty(), qPrintable(ops.lastError()));
+    QCOMPARE(QDir(tree.filePath("out")).entryList(QDir::Files).size(), 1);
+    QVERIFY(ops.operations().isEmpty()); // redo includes only the plain archive
+}
+
+void TestFileOperations::queuedPasswordRequestsStaySeparate()
+{
+    TempTree tree;
+    tree.writeFile("secret.txt", 9);
+    tree.makeDir("out1");
+    tree.makeDir("out2");
+    QVERIFY(makeLockedZip(tree, "first.zip"));
+    QVERIFY(makeLockedZip(tree, "second.zip"));
+    FileOperations ops;
+    QSignalSpy asked(&ops, &FileOperations::passphraseNeeded);
+    ops.extractHere({tree.filePath("first.zip")}, tree.filePath("out1"));
+    ops.extractHere({tree.filePath("second.zip")}, tree.filePath("out2"));
+    QVERIFY(settle(ops));
+    QCOMPARE(asked.size(), 1);
+    QCOMPARE(asked.last().first().toString(), QStringLiteral("first.zip"));
+    ops.providePassphrase("hunter2");
+    QVERIFY(settle(ops));
+    QCOMPARE(asked.size(), 2);
+    QCOMPARE(asked.last().first().toString(), QStringLiteral("second.zip"));
+    QCOMPARE(read(tree.filePath("out1/secret.txt")).size(), 9);
+    ops.providePassphrase("hunter2");
+    QVERIFY(settle(ops));
+    QCOMPARE(read(tree.filePath("out2/secret.txt")).size(), 9);
+    QVERIFY(ops.operations().isEmpty());
+}
+
+void TestFileOperations::failedBatchExtractionKeepsPartialUndo()
+{
+    TempTree tree;
+    tree.writeFile("secret.txt", 9);
+    tree.makeDir("out");
+    QString error;
+    QVERIFY(ArchiveEngine::compress({tree.filePath("secret.txt")}, tree.filePath("plain.zip"),
+        &error, [] { return false; }, [](qint64, qint64) {}));
+    tree.writeFile("corrupt.zip", 10);
+    FileOperations ops;
+    ops.extractHere({tree.filePath("plain.zip"), tree.filePath("corrupt.zip")}, tree.filePath("out"));
+    QVERIFY(settle(ops));
+    QVERIFY(!ops.lastError().isEmpty());
+    QVERIFY(ops.canUndo());
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY(QDir(tree.filePath("out")).isEmpty());
+}
+
+void TestFileOperations::undoOfMoveRefusesAnOccupiedOriginal()
+{
+    TempTree tree;
+    tree.writeFile("src/a", 12);
+    tree.makeDir("dst");
+    FileOperations ops;
+    ops.move({tree.filePath("src/a")}, tree.filePath("dst"));
+    QVERIFY(settle(ops));
+    tree.writeFile("src/a", 37);
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY(!ops.lastError().isEmpty());
+    QCOMPARE(read(tree.filePath("src/a")).size(), 37);
+    QCOMPARE(read(tree.filePath("dst/a")).size(), 12);
+    QVERIFY(!ops.canRedo());
+}
+
+void TestFileOperations::undoOfCopyKeepsLaterAdditions()
+{
+    TempTree tree;
+    tree.writeFile("src/folder/a", 12);
+    tree.makeDir("dst");
+    FileOperations ops;
+    ops.copy({tree.filePath("src/folder")}, tree.filePath("dst"));
+    QVERIFY(settle(ops));
+    tree.writeFile("dst/folder/later", 37);
+    ops.undo();
+    QVERIFY(settle(ops));
+    QVERIFY(!ops.lastError().isEmpty()); // containing directory is no longer empty
+    QCOMPARE(read(tree.filePath("dst/folder/later")).size(), 37);
+    QVERIFY(!QFileInfo::exists(tree.filePath("dst/folder/a")));
 }
 
 QTEST_GUILESS_MAIN(TestFileOperations)
