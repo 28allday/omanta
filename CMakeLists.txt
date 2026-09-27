@@ -103,6 +103,10 @@ set(OMANTA_QML_FILES
     qml/CredentialDialog.qml
     qml/PropertiesDialog.qml
     qml/Colors.qml
+    qml/OmMenu.qml
+    qml/OmMenuItem.qml
+    qml/OmMenuSeparator.qml
+    qml/OmToolTip.qml
 )
 
 qt_add_executable(omanta src/main.cpp ${OMANTA_SOURCES})

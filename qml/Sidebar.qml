@@ -334,9 +334,10 @@ Rectangle {
             onClicked: opsPopover.visible ? opsPopover.close() : opsPopover.open()
         }
 
-        ToolTip.visible: opsMouse.containsMouse && !opsPopover.visible
-        ToolTip.text: qsTr("File operations")
-        ToolTip.delay: 600
+        OmToolTip {
+            visible: opsMouse.containsMouse && !opsPopover.visible
+            text: qsTr("File operations")
+        }
 
         // The detail popover, above the indicator: per-operation rows with a
         // progress bar, the current file with byte/rate details and the time
@@ -467,26 +468,26 @@ Rectangle {
     }
 
     // One menu for every row; the click stamps which row it is about.
-    Menu {
+    OmMenu {
         id: rowMenu
 
         property string rowLocation: ""
         property string rowSection: ""
 
-        MenuItem {
+        OmMenuItem {
             text: qsTr("Open in New Tab")
             enabled: rowMenu.rowLocation !== "" && rowMenu.rowLocation !== "network:///"
             onTriggered: root.openInNewTabRequested(rowMenu.rowLocation)
         }
 
-        MenuItem {
+        OmMenuItem {
             text: qsTr("Remove Bookmark")
             visible: rowMenu.rowSection === "Bookmarks"
             height: visible ? implicitHeight : 0
             onTriggered: places.removeBookmark(rowMenu.rowLocation)
         }
 
-        MenuItem {
+        OmMenuItem {
             text: qsTr("Empty Trash…")
             visible: rowMenu.rowLocation === "trash:///"
             height: visible ? implicitHeight : 0

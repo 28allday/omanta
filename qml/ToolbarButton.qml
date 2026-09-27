@@ -63,10 +63,20 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: root.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: if (root.enabled) root.triggered()
+        onClicked: {
+            root.tipDismissed = true;
+            if (root.enabled)
+                root.triggered();
+        }
+        onContainsMouseChanged: if (!containsMouse) root.tipDismissed = false
     }
 
-    ToolTip.visible: mouse.containsMouse && root.tip !== ""
-    ToolTip.text: root.tip
-    ToolTip.delay: 600
+    // A click dismisses the tip until the pointer leaves, so it never sits
+    // on top of the menu or popover the button just opened.
+    property bool tipDismissed: false
+
+    OmToolTip {
+        visible: mouse.containsMouse && root.tip !== "" && !root.tipDismissed
+        text: root.tip
+    }
 }
