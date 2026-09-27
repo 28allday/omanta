@@ -162,10 +162,12 @@ Window {
 
     // ---- tabs -------------------------------------------------------------
 
+    // tabPath and tabSelection are where a tab opened; tabTitle follows it as
+    // it navigates, for the strip.
     ListModel { id: tabModel }
 
     function addTab(path, selection) {
-        tabModel.append({ tabPath: path, tabSelection: selection || "" });
+        tabModel.append({ tabPath: path, tabSelection: selection || "", tabTitle: "" });
         stack.currentIndex = tabModel.count - 1;
     }
 
@@ -564,6 +566,7 @@ Window {
                     delegate: Rectangle {
                         required property int index
                         required property string tabPath
+                        required property string tabTitle
 
                         width: Math.min(200, Math.max(120, root.width / tabModel.count - 8))
                         height: 28
@@ -578,7 +581,7 @@ Window {
                             anchors.leftMargin: 10
                             anchors.right: closeButton.left
                             anchors.verticalCenter: parent.verticalCenter
-                            text: Platform.baseName(tabPath) || "/"
+                            text: tabTitle || Platform.baseName(tabPath) || "/"
                             color: index === stack.currentIndex ? Colors.text : Colors.textDim
                             font.pixelSize: 12
                             elide: Text.ElideRight
@@ -587,6 +590,10 @@ Window {
                         Text {
                             textFormat: Text.PlainText
                             id: closeButton
+                            // Above tabMouse, which fills the tab and is
+                            // declared later — otherwise it takes the click
+                            // and the x only switches to its tab.
+                            z: 1
 
                             anchors.right: parent.right
                             anchors.rightMargin: 8
@@ -713,8 +720,15 @@ Window {
                         model: tabModel
 
                         delegate: TabPanes {
+                            required property int index
                             required property string tabPath
                             required property string tabSelection
+
+                            // The strip names the tab after its active pane,
+                            // as the window title does, not where it opened.
+                            readonly property string paneTitle: activePane ? activePane.title : ""
+                            onPaneTitleChanged: tabModel.setProperty(index, "tabTitle", paneTitle)
+                            Component.onCompleted: tabModel.setProperty(index, "tabTitle", paneTitle)
 
                             initialPath: tabPath
                             initialSelection: tabSelection

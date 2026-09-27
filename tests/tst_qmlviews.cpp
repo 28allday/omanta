@@ -95,6 +95,8 @@ private Q_SLOTS:
     void thumbnailsFollowInPlaceEdits();
     void dragPreviewSurvivesItsOwner();
     void spacePreviewsInSushi();
+    void tabCloseButtonClosesTab();
+    void tabTitlesFollowNavigation();
 
 private:
     QTemporaryDir m_cache;
@@ -1225,6 +1227,173 @@ void TestQmlViews::spacePreviewsInSushi()
     QTest::qWait(200);
     QCOMPARE(tab->property("path").toString(), tree.path());
     QCOMPARE(fake.calls.size(), 7);
+}
+
+// The tab strip's delegates, in model order. The tab pages carry a tabPath
+// too; only a strip delegate has a close button.
+static QList<QQuickItem *> tabDelegates(QQuickItem *item)
+{
+    QList<QQuickItem *> found;
+    if (item->property("tabPath").isValid()
+        && findItem(item, "text", QStringLiteral("\u00d7")))
+        found.append(item);
+    for (QQuickItem *child : item->childItems())
+        found += tabDelegates(child);
+    std::sort(found.begin(), found.end(), [](QQuickItem *a, QQuickItem *b) {
+        return a->property("index").toInt() < b->property("index").toInt();
+    });
+    return found;
+}
+
+static QPoint centreOf(QQuickItem *item)
+{
+    return item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+}
+
+void TestQmlViews::tabCloseButtonClosesTab()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    tree.writeFile("alpha.txt");
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.path());
+    QQuickWindow *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = qobject_cast<QQuickWindow *>(child);
+            break;
+        }
+    }
+    QVERIFY(window);
+    auto *first = window->property("currentTab").value<QObject *>();
+    QVERIFY(first);
+    window->requestActivate();
+    qobject_cast<QQuickItem *>(first)->forceActiveFocus();
+    QTRY_VERIFY(qobject_cast<QQuickItem *>(first)->hasActiveFocus());
+
+    // The x closes its own tab, not just switches to it.
+    QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier);
+    QTRY_COMPARE(window->property("tabCount").toInt(), 2);
+    QList<QQuickItem *> tabs;
+    QTRY_COMPARE((tabs = tabDelegates(window->contentItem())).size(), 2);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      centreOf(findItem(tabs.at(0), "text", QStringLiteral("×"))));
+    QTRY_COMPARE(window->property("tabCount").toInt(), 1);
+    QVERIFY(window->property("currentTab").value<QObject *>() != first);
+
+    // The rest of the tab still switches on a left-click and closes on a
+    // middle one.
+    QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier);
+    QTRY_COMPARE(window->property("tabCount").toInt(), 2);
+    QTRY_COMPARE((tabs = tabDelegates(window->contentItem())).size(), 2);
+    auto *second = window->property("currentTab").value<QObject *>();
+    const QPoint label = tabs.at(0)->mapToScene(QPointF(20, tabs.at(0)->height() / 2)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, label);
+    QTRY_VERIFY(window->property("currentTab").value<QObject *>() != second);
+    QCOMPARE(window->property("tabCount").toInt(), 2);
+    QTest::mouseClick(window, Qt::MiddleButton, Qt::NoModifier, label);
+    QTRY_COMPARE(window->property("tabCount").toInt(), 1);
+    QCOMPARE(window->property("currentTab").value<QObject *>(), second);
+}
+
+// The tab strip's labels, in tab order. A strip delegate is the item with
+// both a tabPath and a close button (the tab pages carry a tabPath too).
+static QStringList tabStripLabels(QQuickItem *root)
+{
+    QList<QQuickItem *> strip;
+    std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
+        if (item->property("tabPath").isValid()
+            && findItem(item, "text", QStringLiteral("×")))
+            strip.append(item);
+        for (QQuickItem *child : item->childItems())
+            walk(child);
+    };
+    walk(root);
+    std::sort(strip.begin(), strip.end(), [](QQuickItem *a, QQuickItem *b) {
+        return a->property("index").toInt() < b->property("index").toInt();
+    });
+    QStringList labels;
+    for (QQuickItem *delegate : strip) {
+        for (QQuickItem *child : delegate->childItems()) {
+            const QString text = child->property("text").toString();
+            if (!text.isEmpty() && text != QStringLiteral("×"))
+                labels.append(text);
+        }
+    }
+    return labels;
+}
+
+void TestQmlViews::tabTitlesFollowNavigation()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    for (const char *folder : {"one", "two", "three"})
+        QVERIFY(QDir().mkpath(tree.filePath(folder)));
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.path());
+    QQuickWindow *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = qobject_cast<QQuickWindow *>(child);
+            break;
+        }
+    }
+    QVERIFY(window);
+    const auto current = [&] { return window->property("currentTab").value<QObject *>(); };
+    const auto go = [&](const char *folder) {
+        QVERIFY(QMetaObject::invokeMethod(current(), "navigate",
+                                          Q_ARG(QVariant, tree.filePath(folder))));
+        QTRY_COMPARE(current()->property("path").toString(), tree.filePath(folder));
+    };
+    const auto openTab = [&](const char *folder) {
+        QVERIFY(QMetaObject::invokeMethod(window, "addTab", Q_ARG(QVariant, tree.filePath(folder)),
+                                          Q_ARG(QVariant, QVariant())));
+    };
+
+    // Browsing with one tab, then opening a second: the first is named for
+    // where it is now, not where the window opened.
+    go("one");
+    openTab("two");
+    QTRY_COMPARE(tabStripLabels(window->contentItem()), (QStringList{"one", "two"}));
+
+    // A tab renames as it navigates.
+    go("three");
+    QTRY_COMPARE(tabStripLabels(window->contentItem()), (QStringList{"one", "three"}));
+
+    // The tab left after closing the first keeps following its own location.
+    QVERIFY(QMetaObject::invokeMethod(window, "closeTab", Q_ARG(QVariant, 0)));
+    QTRY_COMPARE(window->property("tabCount").toInt(), 1);
+    go("two");
+    openTab("one");
+    QTRY_COMPARE(tabStripLabels(window->contentItem()), (QStringList{"two", "one"}));
 }
 
 #include "tst_qmlviews.moc"
