@@ -94,7 +94,7 @@ Dialog {
             spacing: 8
 
             ToolbarButton {
-                symbol: "⬆"
+                glyph: "toolbar-up"
                 tip: qsTr("Parent folder")
                 onTriggered: root.up()
             }

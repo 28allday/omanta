@@ -103,6 +103,7 @@ set(OMANTA_QML_FILES
     qml/CredentialDialog.qml
     qml/PropertiesDialog.qml
     qml/Colors.qml
+    qml/Glyph.qml
 )
 
 qt_add_executable(omanta src/main.cpp ${OMANTA_SOURCES})
