@@ -95,6 +95,7 @@ private Q_SLOTS:
     void thumbnailsFollowInPlaceEdits();
     void dragPreviewSurvivesItsOwner();
     void spacePreviewsInSushi();
+    void tabTitlesFollowNavigation();
 
 private:
     QTemporaryDir m_cache;
@@ -1197,6 +1198,92 @@ void TestQmlViews::spacePreviewsInSushi()
     QTest::qWait(200);
     QCOMPARE(tab->property("path").toString(), tree.path());
     QCOMPARE(fake.calls.size(), 7);
+}
+
+// The tab strip's labels, in tab order. A strip delegate is the item with
+// both a tabPath and a close button (the tab pages carry a tabPath too).
+static QStringList tabStripLabels(QQuickItem *root)
+{
+    QList<QQuickItem *> strip;
+    std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
+        if (item->property("tabPath").isValid()
+            && findItem(item, "text", QStringLiteral("×")))
+            strip.append(item);
+        for (QQuickItem *child : item->childItems())
+            walk(child);
+    };
+    walk(root);
+    std::sort(strip.begin(), strip.end(), [](QQuickItem *a, QQuickItem *b) {
+        return a->property("index").toInt() < b->property("index").toInt();
+    });
+    QStringList labels;
+    for (QQuickItem *delegate : strip) {
+        for (QQuickItem *child : delegate->childItems()) {
+            const QString text = child->property("text").toString();
+            if (!text.isEmpty() && text != QStringLiteral("×"))
+                labels.append(text);
+        }
+    }
+    return labels;
+}
+
+void TestQmlViews::tabTitlesFollowNavigation()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    for (const char *folder : {"one", "two", "three"})
+        QVERIFY(QDir().mkpath(tree.filePath(folder)));
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.path());
+    QQuickWindow *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = qobject_cast<QQuickWindow *>(child);
+            break;
+        }
+    }
+    QVERIFY(window);
+    const auto current = [&] { return window->property("currentTab").value<QObject *>(); };
+    const auto go = [&](const char *folder) {
+        QVERIFY(QMetaObject::invokeMethod(current(), "navigate",
+                                          Q_ARG(QVariant, tree.filePath(folder))));
+        QTRY_COMPARE(current()->property("path").toString(), tree.filePath(folder));
+    };
+    const auto openTab = [&](const char *folder) {
+        QVERIFY(QMetaObject::invokeMethod(window, "addTab", Q_ARG(QVariant, tree.filePath(folder)),
+                                          Q_ARG(QVariant, QVariant())));
+    };
+
+    // Browsing with one tab, then opening a second: the first is named for
+    // where it is now, not where the window opened.
+    go("one");
+    openTab("two");
+    QTRY_COMPARE(tabStripLabels(window->contentItem()), (QStringList{"one", "two"}));
+
+    // A tab renames as it navigates.
+    go("three");
+    QTRY_COMPARE(tabStripLabels(window->contentItem()), (QStringList{"one", "three"}));
+
+    // The tab left after closing the first keeps following its own location.
+    QVERIFY(QMetaObject::invokeMethod(window, "closeTab", Q_ARG(QVariant, 0)));
+    QTRY_COMPARE(window->property("tabCount").toInt(), 1);
+    go("two");
+    openTab("one");
+    QTRY_COMPARE(tabStripLabels(window->contentItem()), (QStringList{"two", "one"}));
 }
 
 #include "tst_qmlviews.moc"
