@@ -119,6 +119,12 @@ int main(int argc, char *argv[])
             return 0;
     }
 
+    // Qt Quick's default distance-field text ignores fontconfig hinting and
+    // subpixel antialiasing, so omanta's labels read softer than every GTK
+    // app beside it. Native rendering draws them the way the rest of the
+    // desktop does.
+    QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
+
     QQmlApplicationEngine engine;
     engine.addImageProvider(QStringLiteral("fileicon"), new IconImageProvider);
     engine.addImageProvider(QStringLiteral("thumbnail"), new ThumbnailProvider);
