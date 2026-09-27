@@ -95,6 +95,7 @@ private Q_SLOTS:
     void thumbnailsFollowInPlaceEdits();
     void dragPreviewSurvivesItsOwner();
     void spacePreviewsInSushi();
+    void tabCloseButtonClosesTab();
 
 private:
     QTemporaryDir m_cache;
@@ -1197,6 +1198,87 @@ void TestQmlViews::spacePreviewsInSushi()
     QTest::qWait(200);
     QCOMPARE(tab->property("path").toString(), tree.path());
     QCOMPARE(fake.calls.size(), 7);
+}
+
+// The tab strip's delegates, in model order. The tab pages carry a tabPath
+// too; only a strip delegate has a close button.
+static QList<QQuickItem *> tabDelegates(QQuickItem *item)
+{
+    QList<QQuickItem *> found;
+    if (item->property("tabPath").isValid()
+        && findItem(item, "text", QStringLiteral("\u00d7")))
+        found.append(item);
+    for (QQuickItem *child : item->childItems())
+        found += tabDelegates(child);
+    std::sort(found.begin(), found.end(), [](QQuickItem *a, QQuickItem *b) {
+        return a->property("index").toInt() < b->property("index").toInt();
+    });
+    return found;
+}
+
+static QPoint centreOf(QQuickItem *item)
+{
+    return item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+}
+
+void TestQmlViews::tabCloseButtonClosesTab()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    tree.writeFile("alpha.txt");
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.path());
+    QQuickWindow *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = qobject_cast<QQuickWindow *>(child);
+            break;
+        }
+    }
+    QVERIFY(window);
+    auto *first = window->property("currentTab").value<QObject *>();
+    QVERIFY(first);
+    window->requestActivate();
+    qobject_cast<QQuickItem *>(first)->forceActiveFocus();
+    QTRY_VERIFY(qobject_cast<QQuickItem *>(first)->hasActiveFocus());
+
+    // The x closes its own tab, not just switches to it.
+    QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier);
+    QTRY_COMPARE(window->property("tabCount").toInt(), 2);
+    QList<QQuickItem *> tabs;
+    QTRY_COMPARE((tabs = tabDelegates(window->contentItem())).size(), 2);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      centreOf(findItem(tabs.at(0), "text", QStringLiteral("×"))));
+    QTRY_COMPARE(window->property("tabCount").toInt(), 1);
+    QVERIFY(window->property("currentTab").value<QObject *>() != first);
+
+    // The rest of the tab still switches on a left-click and closes on a
+    // middle one.
+    QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier);
+    QTRY_COMPARE(window->property("tabCount").toInt(), 2);
+    QTRY_COMPARE((tabs = tabDelegates(window->contentItem())).size(), 2);
+    auto *second = window->property("currentTab").value<QObject *>();
+    const QPoint label = tabs.at(0)->mapToScene(QPointF(20, tabs.at(0)->height() / 2)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, label);
+    QTRY_VERIFY(window->property("currentTab").value<QObject *>() != second);
+    QCOMPARE(window->property("tabCount").toInt(), 2);
+    QTest::mouseClick(window, Qt::MiddleButton, Qt::NoModifier, label);
+    QTRY_COMPARE(window->property("tabCount").toInt(), 1);
+    QCOMPARE(window->property("currentTab").value<QObject *>(), second);
 }
 
 #include "tst_qmlviews.moc"

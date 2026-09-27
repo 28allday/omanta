@@ -586,6 +586,10 @@ Window {
                         Text {
                             textFormat: Text.PlainText
                             id: closeButton
+                            // Above tabMouse, which fills the tab and is
+                            // declared later — otherwise it takes the click
+                            // and the x only switches to its tab.
+                            z: 1
 
                             anchors.right: parent.right
                             anchors.rightMargin: 8
