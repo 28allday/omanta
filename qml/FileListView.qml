@@ -208,8 +208,8 @@ Item {
                     anchors.rightMargin: 10
                     spacing: 0
                     // Cut and waiting for a paste: dimmed, as in Nautilus.
-                    opacity: Clipboard.cutPaths[row.filePath]
-                             || (row.targetPath !== "" && Clipboard.cutPaths[row.targetPath]) ? 0.5 : 1
+                    opacity: Clipboard.revision >= 0 && (Clipboard.isCutPath(row.filePath)
+                             || (row.targetPath !== "" && Clipboard.isCutPath(row.targetPath))) ? 0.5 : 1
 
                     Item {
                         id: nameCell

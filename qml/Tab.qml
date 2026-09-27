@@ -113,6 +113,9 @@ FocusScope {
     // A drop decided what should move or copy where; the window runs it
     // through the same conflict handling as paste.
     signal transferRequested(var sources, string destination, bool isMove)
+    // Space found no previewer (Sushi not installed). Nothing else happens —
+    // a look-only key must never open or extract — the window says why.
+    signal previewUnavailable()
 
     readonly property bool viewingStarred: path === "starred:///"
     readonly property bool viewingNetwork: path === "network:///"
@@ -324,6 +327,48 @@ FocusScope {
     }
 
     function reload() { dirModel.reload(); }
+
+    // Quick Look (Space): the one selected item, or the current row, in the
+    // system previewer. `toggle` makes a second Space close it.
+    function previewRow() {
+        if (selectionCount === 1)
+            return files.proxyRowForName(Object.keys(selectedNames)[0]);
+        return selectionCount === 0 ? currentIndex : -1;
+    }
+
+    function preview(toggle) {
+        const row = previewRow();
+        if (row < 0 || row >= files.count)
+            return;
+        if (Previewer.show(actionPathAt(row), toggle))
+            Previewer.owner = root;
+        else
+            root.previewUnavailable();
+    }
+
+    // With the preview up, it follows the selection of the tab that opened
+    // it, as in Nautilus — other tabs and windows stay put.
+    onSelectedNamesChanged: {
+        const row = previewRow();
+        if (Previewer.visible && Previewer.owner === root && selectionCount === 1 && row >= 0)
+            Previewer.show(actionPathAt(row), false);
+    }
+
+    // Arrow keys pressed inside the preview window step this tab's selection
+    // (GtkDirectionType), and the preview follows through the handler above.
+    Connections {
+        target: Previewer
+        enabled: Previewer.owner === root
+        function onSelectionEvent(direction) {
+            const vertical = root.viewMode === "icon" ? root.viewColumns : 1;
+            const step = [1, -1, -vertical, vertical, -1, 1][direction];
+            // From the item being previewed — the keyboard cursor may sit
+            // elsewhere after a click.
+            const from = root.previewRow();
+            if (step !== undefined && from >= 0)
+                root.setCurrent(Math.max(0, Math.min(root.files.count - 1, from + step)), false);
+        }
+    }
 
     // A drop landed. Turns the drag's URLs into locations, applies the
     // Nautilus modifier convention — Ctrl forces copy, Shift forces move,
@@ -574,6 +619,15 @@ FocusScope {
 
     Keys.onPressed: event => {
         const extend = (event.modifiers & Qt.ShiftModifier) !== 0;
+        // Space previews — unless the user is mid-way through typing a name,
+        // where it is part of the name.
+        if (event.key === Qt.Key_Space && typeAhead.prefix === ""
+            && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier
+                                    | Qt.MetaModifier | Qt.ShiftModifier))) {
+            preview(true);
+            event.accepted = true;
+            return;
+        }
 
         switch (event.key) {
         case Qt.Key_Down:

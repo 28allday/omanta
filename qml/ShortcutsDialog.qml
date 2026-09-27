@@ -30,7 +30,8 @@ Dialog {
         { name: qsTr("Navigation"), rows: [
             ["Alt+Left / Alt+Right", qsTr("Back / forward")], ["Alt+Up", qsTr("Parent folder")],
             ["Alt+Home", qsTr("Home folder")], ["Ctrl+L", qsTr("Edit the location")],
-            ["Enter", qsTr("Open the selection")], ["Backspace", qsTr("Parent folder")]] },
+            ["Enter", qsTr("Open the selection")], ["Space", qsTr("Preview the selected file")],
+            ["Backspace", qsTr("Parent folder")]] },
         { name: qsTr("View"), rows: [
             ["Ctrl+1 / Ctrl+2", qsTr("List / icon view")], ["Ctrl+H", qsTr("Show hidden files")],
             ["Ctrl++ / Ctrl+-", qsTr("Zoom in / out")], ["Ctrl+0", qsTr("Reset zoom")],

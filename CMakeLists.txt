@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(omanta VERSION 0.1.17 LANGUAGES CXX)
+project(omanta VERSION 0.1.18 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -63,6 +63,8 @@ set(OMANTA_SOURCES
     src/ServerStore.h
     src/NetworkModel.cpp
     src/NetworkModel.h
+    src/Previewer.cpp
+    src/Previewer.h
     src/SearchModel.h
     src/Settings.cpp
     src/Settings.h

@@ -12,6 +12,8 @@
 #include "ThumbnailProvider.h"
 #include "TestFixture.h"
 
+#include <QDBusConnection>
+#include <QDBusMessage>
 #include <QGuiApplication>
 #include <QProcess>
 #include <QQmlApplicationEngine>
@@ -28,6 +30,60 @@
 #include <algorithm>
 #include <functional>
 
+// Stands in for Sushi 50 on the session bus under a private name, so Space
+// can be driven end to end without a preview window ever opening. Like the
+// real one it takes (ssbs) and announces only Visible=false.
+class FakePreviewer : public QObject
+{
+    Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface", "org.gnome.NautilusPreviewer2")
+    Q_PROPERTY(bool Visible READ visible)
+
+public:
+    struct Call { QString uri; bool toggle; };
+    QList<Call> calls;
+    bool shown = false;
+
+    bool visible() const { return shown; }
+
+public Q_SLOTS:
+    void ShowFile(const QString &uri, const QString &, bool closeIfShown, const QString &)
+    {
+        calls.append({uri, closeIfShown});
+        setShown(!(closeIfShown && shown));
+    }
+    void Close() { setShown(false); }
+
+public:
+    // An arrow key pressed inside the preview window. Sushi 50 sends it as
+    // (u) although it introspects as (q); both must work.
+    template <typename Direction>
+    void pressInPreview(Direction direction)
+    {
+        QDBusMessage event = QDBusMessage::createSignal(
+            QStringLiteral("/org/gnome/NautilusPreviewer"),
+            QStringLiteral("org.gnome.NautilusPreviewer2"), QStringLiteral("SelectionEvent"));
+        event << QVariant::fromValue(direction);
+        QDBusConnection::sessionBus().send(event);
+    }
+
+private:
+    void setShown(bool value)
+    {
+        if (shown == value)
+            return;
+        shown = value;
+        if (value)
+            return; // Sushi 50 never announces an open
+        QDBusMessage changed = QDBusMessage::createSignal(
+            QStringLiteral("/org/gnome/NautilusPreviewer"),
+            QStringLiteral("org.freedesktop.DBus.Properties"), QStringLiteral("PropertiesChanged"));
+        changed << QStringLiteral("org.gnome.NautilusPreviewer2")
+                << QVariantMap{{QStringLiteral("Visible"), value}} << QStringList();
+        QDBusConnection::sessionBus().send(changed);
+    }
+};
+
 class TestQmlViews : public QObject
 {
     Q_OBJECT
@@ -38,6 +94,7 @@ private Q_SLOTS:
     void pasteKeepsCopiedFilesOnClipboard();
     void thumbnailsFollowInPlaceEdits();
     void dragPreviewSurvivesItsOwner();
+    void spacePreviewsInSushi();
 
 private:
     QTemporaryDir m_cache;
@@ -52,6 +109,9 @@ void TestQmlViews::initTestCase()
     // Every window offers the Omarchy Toggle-menu row on first launch; these
     // suites must never edit the real desktop's menu or bindings.
     qputenv("OMANTA_SWITCH", "/nonexistent/omanta-switch");
+    // Space must never reach the real Sushi from a test run.
+    qputenv("OMANTA_PREVIEWER_SERVICE",
+            QByteArray("org.omarchy.omanta.TestPreviewer") + QByteArray::number(QCoreApplication::applicationPid()));
 }
 
 static QVariant invoke(QObject *object, const char *method)
@@ -839,7 +899,8 @@ void TestQmlViews::pasteKeepsCopiedFilesOnClipboard()
     clipboard->cutFiles({cut});
     // Reported by email 2026-09-27: a cut looked like a copy until the paste.
     // Cut files are dimmed in both views; a copied one never is.
-    QCOMPARE(clipboard->cutPaths().keys(), QStringList{cut});
+    QVERIFY(clipboard->isCutPath(cut));
+    QVERIFY(!clipboard->isCutPath(copied));
     auto *tab = qobject_cast<QQuickItem *>(window->property("currentTab").value<QObject *>());
     QVERIFY(tab);
     const auto dimmed = [tab](const QString &path) {
@@ -865,7 +926,7 @@ void TestQmlViews::pasteKeepsCopiedFilesOnClipboard()
     QTRY_VERIFY(!operations->property("busy").toBool());
     QVERIFY(!QFileInfo::exists(cut));
     QVERIFY(clipboard->paths().isEmpty());
-    QVERIFY(clipboard->cutPaths().isEmpty());
+    QVERIFY(!clipboard->isCutPath(cut));
 }
 
 void TestQmlViews::thumbnailsFollowInPlaceEdits()
@@ -1012,6 +1073,130 @@ void TestQmlViews::dragPreviewSurvivesItsOwner()
         QCoreApplication::processEvents();
         QTest::qWait(5);
     }
+}
+
+// Space previews the selected file through the system previewer (Sushi,
+// org.gnome.NautilusPreviewer2): Space again closes it, the preview follows
+// the selection while it is up, Space inside a type-ahead name is part of the
+// name, and with no previewer the item opens instead with a note saying why.
+void TestQmlViews::spacePreviewsInSushi()
+{
+    QDBusConnection bus = QDBusConnection::sessionBus();
+    if (!bus.isConnected())
+        QSKIP("needs a session bus");
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    const QString service = qEnvironmentVariable("OMANTA_PREVIEWER_SERVICE");
+    FakePreviewer fake;
+    QVERIFY(bus.registerObject(QStringLiteral("/org/gnome/NautilusPreviewer"), &fake,
+                               QDBusConnection::ExportAllSlots | QDBusConnection::ExportAllProperties));
+    QVERIFY(bus.registerService(service));
+    const auto cleanup = qScopeGuard([&] {
+        bus.unregisterService(service);
+        bus.unregisterObject(QStringLiteral("/org/gnome/NautilusPreviewer"));
+    });
+
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    const QString first = tree.writeFile("alpha.txt");
+    const QString second = tree.writeFile("beta notes.md");
+    QVERIFY(QDir().mkpath(tree.filePath("folder")));
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.path());
+    QQuickWindow *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = qobject_cast<QQuickWindow *>(child);
+            break;
+        }
+    }
+    QVERIFY(window);
+    auto *tab = qobject_cast<QQuickItem *>(window->property("currentTab").value<QObject *>());
+    QVERIFY(tab);
+    QTRY_COMPARE(window->property("visibleCount").toInt(), 3);
+    window->requestActivate();
+    tab->forceActiveFocus();
+    QTRY_VERIFY(tab->hasActiveFocus());
+    auto *previewer = engine.singletonInstance<QObject *>("Omanta", "Previewer");
+    QVERIFY(previewer);
+    const QString firstUri = QUrl::fromLocalFile(first).toString(QUrl::FullyEncoded);
+    const QString secondUri = QUrl::fromLocalFile(second).toString(QUrl::FullyEncoded);
+
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, QStringLiteral("alpha.txt"))));
+    QTest::keyClick(window, Qt::Key_Space);
+    QTRY_COMPARE(fake.calls.size(), 1);
+    QCOMPARE(fake.calls.last().uri, firstUri);
+    QVERIFY(fake.calls.last().toggle);
+    QTRY_VERIFY(previewer->property("visible").toBool());
+
+    // It follows the selection while up (the URI is encoded: a space in the name).
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, QStringLiteral("beta notes.md"))));
+    QTRY_COMPARE(fake.calls.size(), 2);
+    QCOMPARE(fake.calls.last().uri, secondUri);
+    QVERIFY(!fake.calls.last().toggle);
+
+    // An arrow pressed inside the preview (GTK_DIR_LEFT) steps the selection
+    // back one item, and the preview follows.
+    fake.pressInPreview(uint(4)); // what Sushi 50 actually sends
+    QTRY_COMPARE(fake.calls.size(), 3);
+    QCOMPARE(fake.calls.last().uri, firstUri);
+    QCOMPARE(tab->property("selectionCount").toInt(), 1);
+    fake.pressInPreview(ushort(5)); // what it declares: right, forward again
+    QTRY_COMPARE(fake.calls.size(), 4);
+    QCOMPARE(fake.calls.last().uri, secondUri);
+
+    // Closed from the preview window itself (Escape there): the selection
+    // stops driving it.
+    QVERIFY(QMetaObject::invokeMethod(&fake, "Close"));
+    QTRY_VERIFY(!previewer->property("visible").toBool());
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, QStringLiteral("alpha.txt"))));
+    QTest::qWait(100);
+    QCOMPARE(fake.calls.size(), 4);
+
+    // Space opens it again, and Space once more closes it.
+    QTest::keyClick(window, Qt::Key_Space);
+    QTRY_COMPARE(fake.calls.size(), 5);
+    QTRY_VERIFY(previewer->property("visible").toBool());
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, QStringLiteral("beta notes.md"))));
+    QTRY_COMPARE(fake.calls.size(), 6);
+    QTest::keyClick(window, Qt::Key_Space);
+    QTRY_COMPARE(fake.calls.size(), 7);
+    QVERIFY(fake.calls.last().toggle);
+    QTRY_VERIFY(!previewer->property("visible").toBool());
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, QStringLiteral("alpha.txt"))));
+    QTest::qWait(100);
+    QCOMPARE(fake.calls.size(), 7);
+
+    // Mid type-ahead, Space belongs to the name being typed.
+    QTest::keyClick(window, Qt::Key_B);
+    QTest::keyClick(window, Qt::Key_Space);
+    QTest::qWait(100);
+    QCOMPARE(fake.calls.size(), 7);
+    QTest::qWait(1000); // the type-ahead prefix times out
+
+    // No previewer: nothing opens — a look-only key must not open or
+    // extract (a folder here, so a regression navigates rather than
+    // launching an app on the desktop) — and the window says why.
+    bus.unregisterService(service);
+    QTRY_VERIFY(!previewer->property("visible").toBool()); // its owner left
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, QStringLiteral("folder"))));
+    QTest::keyClick(window, Qt::Key_Space);
+    QTRY_VERIFY(window->property("flashText").toString().contains(QStringLiteral("Sushi")));
+    QTest::qWait(200);
+    QCOMPARE(tab->property("path").toString(), tree.path());
+    QCOMPARE(fake.calls.size(), 7);
 }
 
 #include "tst_qmlviews.moc"

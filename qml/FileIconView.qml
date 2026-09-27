@@ -127,8 +127,8 @@ Item {
                 spacing: 6
                 width: parent.width - 12
                 // Cut and waiting for a paste: dimmed, as in Nautilus.
-                opacity: Clipboard.cutPaths[cell.filePath]
-                         || (cell.targetPath !== "" && Clipboard.cutPaths[cell.targetPath]) ? 0.5 : 1
+                opacity: Clipboard.revision >= 0 && (Clipboard.isCutPath(cell.filePath)
+                         || (cell.targetPath !== "" && Clipboard.isCutPath(cell.targetPath))) ? 0.5 : 1
 
                 Image {
                     id: preview

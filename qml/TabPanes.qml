@@ -21,6 +21,7 @@ FocusScope {
     signal contextMenuRequested()
     signal mountNeeded(string location)
     signal transferRequested(var sources, string destination, bool isMove)
+    signal previewUnavailable()
 
     function setActive(pane) {
         if (activePane !== pane)
@@ -103,6 +104,7 @@ FocusScope {
                 onMountNeeded: location => slot.mountNeeded(location)
                 onTransferRequested: (sources, destination, isMove) =>
                     slot.transferRequested(sources, destination, isMove)
+                onPreviewUnavailable: slot.previewUnavailable()
             }
         }
 

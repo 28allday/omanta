@@ -1,8 +1,8 @@
 #pragma once
 
 #include <QObject>
+#include <QSet>
 #include <QStringList>
-#include <QVariantMap>
 #include <QtQmlIntegration>
 
 // File cut/copy/paste, on the real system clipboard.
@@ -20,17 +20,21 @@ class Clipboard : public QObject
 
     Q_PROPERTY(bool hasFiles READ hasFiles NOTIFY changed)
     Q_PROPERTY(int count READ count NOTIFY changed)
-    // The files waiting on a cut, as path → true, so a view can dim them the
-    // way Nautilus does: without that, a cut looks exactly like a copy until
-    // the paste. Cached — every delegate reads it on every clipboard change.
-    Q_PROPERTY(QVariantMap cutPaths READ cutPaths NOTIFY changed)
+    // Bumped whenever the clipboard changes, so a binding that calls
+    // isCutPath() re-evaluates. The views dim cut files the way Nautilus
+    // does: without that, a cut looks exactly like a copy until the paste.
+    Q_PROPERTY(int revision READ revision NOTIFY changed)
 
 public:
     explicit Clipboard(QObject *parent = nullptr);
 
     bool hasFiles() const { return !paths().isEmpty(); }
     int count() const { return int(paths().size()); }
-    QVariantMap cutPaths() const { return m_cutPaths; }
+    int revision() const { return m_revision; }
+    // Waiting on a cut? A set lookup, not a map handed to QML: every visible
+    // delegate asks on every clipboard change, and any app can put a huge
+    // payload on the clipboard.
+    Q_INVOKABLE bool isCutPath(const QString &path) const { return m_cut.contains(path); }
 
     Q_INVOKABLE void copyFiles(const QStringList &paths);
     Q_INVOKABLE void cutFiles(const QStringList &paths);
@@ -50,5 +54,6 @@ private:
     void put(const QStringList &paths, bool cut);
     void refresh();
 
-    QVariantMap m_cutPaths;
+    QSet<QString> m_cut;
+    int m_revision = 0;
 };

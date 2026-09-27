@@ -34,6 +34,10 @@ Omarchy theme.
   sidebar button slides it back over the files.
 - Hidden files: Ctrl+H or Preferences → Show Hidden Files, remembered
   after a restart
+- Quick preview: Space (or right-click → Preview) shows the selected file in
+  Sushi, the previewer stock Omarchy ships — zoomable images, text,
+  Markdown, PDF, audio, video, and office files when LibreOffice is
+  installed. Arrow keys step through the folder; Space or Escape closes it
 - Search: recursive filename plus full-text (via `localsearch`), date and
   type filters
 - Compress/extract (zip, tar.xz, 7z, encrypted zip), "Extract to…"
@@ -56,8 +60,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.17/omanta-0.1.17-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.17-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.18/omanta-0.1.18-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.18-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —

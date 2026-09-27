@@ -721,6 +721,7 @@ Window {
                             onMountNeeded: location => windowMounter.mountLocation(location)
                             onTransferRequested: (sources, destination, isMove) =>
                                 root.startTransfer(sources, destination, isMove, false)
+                            onPreviewUnavailable: root.flash(qsTr("Space previews need Sushi — install the sushi package"))
                         }
                     }
                 }
@@ -1770,6 +1771,12 @@ Window {
             text: "Open"
             enabled: root.currentTab && root.currentTab.selectionCount > 0
             onTriggered: root.currentTab.activate(root.currentTab.currentIndex)
+        }
+
+        MenuItem {
+            text: qsTr("Preview")
+            enabled: root.currentTab && root.currentTab.selectionCount === 1
+            onTriggered: root.currentTab.preview(false)
         }
 
         MenuSeparator {}

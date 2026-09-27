@@ -22,12 +22,13 @@ Clipboard::Clipboard(QObject *parent)
 
 void Clipboard::refresh()
 {
-    QVariantMap cut;
+    QSet<QString> cut;
     if (isCut()) {
-        for (const QString &path : paths())
-            cut.insert(path, true);
+        const QStringList cutPaths = paths();
+        cut = QSet<QString>(cutPaths.begin(), cutPaths.end());
     }
-    m_cutPaths = cut;
+    m_cut = cut;
+    ++m_revision;
     Q_EMIT changed();
 }
 
