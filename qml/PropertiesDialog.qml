@@ -25,7 +25,8 @@ Dialog {
     width: 540
     height: 540
     modal: true
-    closePolicy: Popup.CloseOnEscape
+    // Nothing to lose here, so a click on the dimmed window closes it too.
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     // Not the file's name: the header below already says it, in a larger font
     // and next to its icon. Printing it twice reads like a rendering fault.
     title: qsTr("Properties")

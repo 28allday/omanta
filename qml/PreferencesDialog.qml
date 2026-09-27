@@ -16,7 +16,12 @@ Dialog {
     width: 560
     height: Math.min(640, Overlay.overlay ? Overlay.overlay.height - 80 : 640)
     modal: true
-    closePolicy: Popup.CloseOnEscape
+    // Nothing to lose here, so a click on the dimmed window closes it too.
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+    // Held by a property, not the default one: that would hand it to the
+    // contentItem (a ScrollView here and there) before it lifts itself out.
+    readonly property Item closeButton: DialogCloseButton { dialog: root }
     title: qsTr("Preferences")
     padding: 24
     // Keep the cards centred while leaving room for the bar in the margin.
@@ -54,6 +59,7 @@ Dialog {
 
     function syncFromSettings() {
         foldersFirstSwitch.checked = Settings.sortFoldersFirst;
+        showHiddenSwitch.checked = Settings.showHiddenFiles;
         clickCombo.currentIndex = Settings.clickPolicy === "single" ? 1 : 0;
         treeViewSwitch.checked = Settings.useTreeView;
         createLinkSwitch.checked = Settings.showCreateLink;
@@ -197,6 +203,14 @@ Dialog {
                 PrefSwitch {
                     id: foldersFirstSwitch
                     onToggled: Settings.sortFoldersFirst = checked
+                }
+            }
+
+            PrefRow {
+                label: qsTr("Show Hidden Files")
+                PrefSwitch {
+                    id: showHiddenSwitch
+                    onToggled: Settings.showHiddenFiles = checked
                 }
             }
 

@@ -54,8 +54,22 @@ Window {
     readonly property int operationsCount: FileOperations.operations.length
     readonly property int tabCount: tabModel.count
 
-    // The sidebar: on by default, F9 toggles — Nautilus's binding.
-    property bool sidebarVisible: true
+    // The sidebar (GitHub #5). Wide, it sits beside the files and F9 flips
+    // the saved Settings.showSidebar. Narrow — half a laptop screen when
+    // tiled — it hides itself, like Nautilus, and F9 or the header button
+    // slides it over the files instead; picking a place slides it away.
+    readonly property bool sidebarNarrow: width < 720
+    property bool sidebarOverlayOpen: false
+    readonly property bool sidebarInline: !sidebarNarrow && Settings.showSidebar
+    readonly property bool sidebarVisible: sidebarNarrow ? sidebarOverlayOpen : Settings.showSidebar
+    onSidebarNarrowChanged: sidebarOverlayOpen = false
+
+    function toggleSidebar() {
+        if (sidebarNarrow)
+            sidebarOverlayOpen = !sidebarOverlayOpen;
+        else
+            Settings.showSidebar = !Settings.showSidebar;
+    }
     readonly property int placesCount: sidebar.placesCount
 
     // Search: Ctrl+F opens the bar, Escape closes it. Published for the UI
@@ -203,7 +217,17 @@ Window {
                     // A nested layout defaults to fillWidth: true — it would
                     // fight the path bar for every spare pixel.
                     Layout.fillWidth: false
-                    Layout.preferredWidth: root.sidebarVisible ? 192 : -1
+                    Layout.preferredWidth: root.sidebarInline ? 192 : -1
+
+                    // Nautilus 50's show-sidebar button: only while the
+                    // sidebar is out of the layout, hidden or narrow.
+                    ToolbarButton {
+                        visible: !root.sidebarInline
+                        glyph: "view-sidebar"
+                        tip: qsTr("Show Sidebar (F9)")
+                        active: root.sidebarOverlayOpen
+                        onTriggered: root.toggleSidebar()
+                    }
 
                     ToolbarButton {
                         symbol: "⌕"
@@ -214,7 +238,7 @@ Window {
 
                     Text {
                         textFormat: Text.PlainText
-                        visible: root.sidebarVisible
+                        visible: root.sidebarInline
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignHCenter
                         text: "Files"
@@ -599,22 +623,50 @@ Window {
         // (The search field lives inline in the toolbar, in the path bar's
         // slot — see above. No separate search row, as in Nautilus.)
 
-        RowLayout {
+        // Sidebar and files. Not a RowLayout: in a narrow window the sidebar
+        // slides over the files rather than squeezing them.
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
+            clip: true
+
+            // Dims the files under the slid-over sidebar; a press on it
+            // dismisses the sidebar, like clicking outside a dialog.
+            Rectangle {
+                anchors.fill: parent
+                z: 1
+                color: "black"
+                opacity: root.sidebarOverlayOpen ? 0.3 : 0
+                visible: opacity > 0
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: root.sidebarOverlayOpen
+                    onPressed: root.sidebarOverlayOpen = false
+                }
+            }
 
             Sidebar {
                 id: sidebar
 
-                Layout.fillHeight: true
-                Layout.preferredWidth: 200
-                visible: root.sidebarVisible
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 200
+                x: root.sidebarVisible ? 0 : -width
+                z: 2
+                visible: root.sidebarVisible || x > -width
+                // Slides only as an overlay; the wide F9 toggle stays instant.
+                Behavior on x {
+                    enabled: root.sidebarNarrow
+                    NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                }
                 currentLocation: root.currentPath
                 mounter: windowMounter
                 onNavigateRequested: location => {
                     if (root.currentTab)
                         root.currentTab.navigate(location);
+                    root.sidebarOverlayOpen = false;
                 }
                 onMountError: (name, message) => root.flash(qsTr("Could not mount “%1”: %2").arg(name).arg(message))
                 onOpsPopoverClosed: root.returnFocusToView()
@@ -626,13 +678,16 @@ Window {
                     else if (root.currentTab)
                         root.currentTab.requestDrop(urls, location);
                 }
-                onOpenInNewTabRequested: location => root.addTab(location)
+                onOpenInNewTabRequested: location => {
+                    root.addTab(location);
+                    root.sidebarOverlayOpen = false;
+                }
                 onEmptyTrashRequested: emptyTrashConfirm.open()
             }
 
             Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                anchors.fill: parent
+                anchors.leftMargin: root.sidebarInline ? sidebar.width : 0
 
                 // The file views' backdrop — the window tone that used to be
                 // the root window colour before the root went transparent.
@@ -1419,6 +1474,7 @@ Window {
             sortLargest.checked = key === FileSortFilterModel.BySize && desc;
             sortByType.checked = key === FileSortFilterModel.ByType && !desc;
             hiddenToggle.checked = root.showHidden;
+            sidebarToggle.checked = root.sidebarVisible;
         }
 
         function setSort(key, descending) {
@@ -1531,6 +1587,13 @@ Window {
                 if (root.currentTab)
                     root.currentTab.showHidden = !root.currentTab.showHidden;
             }
+        }
+
+        MenuItem {
+            id: sidebarToggle
+            text: qsTr("Show Sidebar")
+            checkable: true
+            onTriggered: root.toggleSidebar()
         }
     }
 
@@ -1970,7 +2033,13 @@ Window {
     Shortcut { sequence: "F3"; onActivated: if (root.currentSlot) root.currentSlot.toggleSplit() }
     Shortcut { sequence: "F6"; onActivated: if (root.currentSlot) root.currentSlot.cyclePane() }
 
-    Shortcut { sequence: "F9"; onActivated: root.sidebarVisible = !root.sidebarVisible }
+    Shortcut { sequence: "F9"; onActivated: root.toggleSidebar() }
+    // Only while the sidebar is slid over; otherwise Escape stays the views'.
+    Shortcut {
+        sequence: "Escape"
+        enabled: root.sidebarOverlayOpen
+        onActivated: root.sidebarOverlayOpen = false
+    }
     Shortcut { sequence: "Ctrl+D"; onActivated: root.toggleBookmark() }
     Shortcut { sequence: "Ctrl+F"; onActivated: root.openSearch() }
     Shortcut { sequence: "Ctrl+Shift+F"; onActivated: root.toggleSearchContent() }

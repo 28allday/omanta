@@ -9,7 +9,12 @@ Dialog {
     anchors.centerIn: Overlay.overlay
     width: 360
     modal: true
-    closePolicy: Popup.CloseOnEscape
+    // Nothing to lose here, so a click on the dimmed window closes it too.
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+    // Held by a property, not the default one: that would hand it to the
+    // contentItem (a ScrollView here and there) before it lifts itself out.
+    readonly property Item closeButton: DialogCloseButton { dialog: root }
 
     Column {
         width: parent.width

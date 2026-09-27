@@ -28,7 +28,12 @@ Omarchy theme.
 - Thumbnails (images, video, PDF) via the freedesktop spec, sharing the
   system-wide cache
 - Places sidebar: devices with mount/unmount/eject, Network (`smb://`,
-  `sftp://`) with credential prompts, Trash, Recent, Starred, bookmarks
+  `sftp://`) with credential prompts, Trash, Recent, Starred, bookmarks.
+  F9 shows or hides it, and the choice is remembered. In a narrow window
+  (tiled side by side on a laptop, say) it tucks itself away; F9 or the
+  sidebar button slides it back over the files.
+- Hidden files: Ctrl+H or Preferences → Show Hidden Files, remembered
+  after a restart
 - Search: recursive filename plus full-text (via `localsearch`), date and
   type filters
 - Compress/extract (zip, tar.xz, 7z, encrypted zip), "Extract to…"
@@ -51,8 +56,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.15/omanta-0.1.15-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.15-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.16/omanta-0.1.16-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.16-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —

@@ -64,6 +64,8 @@ void TestSettings::defaultsAreNautilus()
     QCOMPARE(settings.showDirectoryItemCounts(), QStringLiteral("local-only"));
     QCOMPARE(settings.dateTimeFormat(), QStringLiteral("simple"));
     QCOMPARE(settings.defaultViewMode(), QStringLiteral("icon"));
+    QCOMPARE(settings.showHiddenFiles(), false);
+    QCOMPARE(settings.showSidebar(), true);
 }
 
 void TestSettings::settersPersistAcrossInstances()
@@ -73,12 +75,16 @@ void TestSettings::settersPersistAcrossInstances()
         settings.setSortFoldersFirst(true);
         settings.setClickPolicy(QStringLiteral("single"));
         settings.setDateTimeFormat(QStringLiteral("detailed"));
+        settings.setShowHiddenFiles(true);
+        settings.setShowSidebar(false);
     }
 
     Settings reread;
     QCOMPARE(reread.sortFoldersFirst(), true);
     QCOMPARE(reread.clickPolicy(), QStringLiteral("single"));
     QCOMPARE(reread.dateTimeFormat(), QStringLiteral("detailed"));
+    QCOMPARE(reread.showHiddenFiles(), true);
+    QCOMPARE(reread.showSidebar(), false);
     // Untouched keys still answer their defaults.
     QCOMPARE(reread.showThumbnails(), QStringLiteral("local-only"));
 }
@@ -89,7 +95,8 @@ void TestSettings::invalidValuesFallBackToDefaults()
           "clickPolicy=triple\n"
           "showThumbnails=sometimes\n"
           "showDirectoryItemCounts=weekly\n"
-          "dateTimeFormat=cuneiform\n");
+          "dateTimeFormat=cuneiform\n"
+          "showHiddenFiles=1\n");
 
     Settings settings;
     QCOMPARE(settings.sortFoldersFirst(), true);
@@ -97,6 +104,7 @@ void TestSettings::invalidValuesFallBackToDefaults()
     QCOMPARE(settings.showThumbnails(), QStringLiteral("local-only"));
     QCOMPARE(settings.showDirectoryItemCounts(), QStringLiteral("local-only"));
     QCOMPARE(settings.dateTimeFormat(), QStringLiteral("simple"));
+    QCOMPARE(settings.showHiddenFiles(), false);
 }
 
 void TestSettings::externalEditsReloadLive()

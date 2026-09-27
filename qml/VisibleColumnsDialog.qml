@@ -16,7 +16,12 @@ Dialog {
     width: 380
     height: Math.min(560, Overlay.overlay ? Overlay.overlay.height - 80 : 560)
     modal: true
-    closePolicy: Popup.CloseOnEscape
+    // Nothing to lose here, so a click on the dimmed window closes it too.
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+    // Held by a property, not the default one: that would hand it to the
+    // contentItem (a ScrollView here and there) before it lifts itself out.
+    readonly property Item closeButton: DialogCloseButton { dialog: root }
     title: qsTr("Visible Columns")
 
     // Labels only — sort keys and widths live with the list view.

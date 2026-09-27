@@ -330,6 +330,107 @@ static void checkTrashFallback(QQmlApplicationEngine &engine, QObject *window, Q
     QVERIFY(QFileInfo::exists(copying));
 }
 
+// GitHub #6: the information and settings dialogs close from the mouse too —
+// their ✕, or a press on the dimmed window around them. A dialog that takes
+// input keeps Escape and its own buttons, so a stray click can't discard it.
+static QObject *findDialog(QObject *window, const char *type)
+{
+    for (QObject *child : window->findChildren<QObject *>()) {
+        if (QByteArray(child->metaObject()->className()).startsWith(type))
+            return child;
+    }
+    return nullptr;
+}
+
+static void checkDialogsCloseByMouse(QQuickWindow *window)
+{
+    const QPoint outside(4, window->height() - 4);
+    for (const char *type : {"AboutDialog", "PreferencesDialog", "ShortcutsDialog",
+                             "VisibleColumnsDialog"}) {
+        QObject *dialog = findDialog(window, type);
+        QVERIFY2(dialog, type);
+        auto *close = qobject_cast<QQuickItem *>(dialog->property("closeButton").value<QObject *>());
+        QVERIFY2(close, type);
+
+        QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+        QTRY_VERIFY2(dialog->property("opened").toBool(), type);
+        QVERIFY2(close->isVisible(), type);
+        const QPointF corner = close->mapToScene(QPointF(close->width() / 2, close->height() / 2));
+        auto *background = qobject_cast<QQuickItem *>(dialog->property("background").value<QObject *>());
+        const QRectF frame(background->mapToScene(QPointF(0, 0)), background->size());
+        QVERIFY2(frame.contains(corner), type); // inside the dialog, not off in the dim
+        QVERIFY2(corner.x() > frame.center().x() && corner.y() < frame.center().y(), type);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, corner.toPoint());
+        QTRY_VERIFY2(!dialog->property("visible").toBool(), type);
+
+        QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+        QTRY_VERIFY2(dialog->property("opened").toBool(), type);
+        QVERIFY2(!frame.contains(outside), type);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, outside);
+        QTRY_VERIFY2(!dialog->property("visible").toBool(), type);
+    }
+
+    QObject *confirm = findDialog(window, "ConfirmDialog");
+    QVERIFY(confirm);
+    QVERIFY(QMetaObject::invokeMethod(confirm, "open"));
+    QTRY_VERIFY(confirm->property("opened").toBool());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, outside);
+    QTest::qWait(50);
+    QVERIFY(confirm->property("visible").toBool());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_VERIFY(!confirm->property("visible").toBool());
+}
+
+// GitHub #5: wide, F9 (toggleSidebar) flips the saved setting; narrow, the
+// sidebar hides itself and toggling slides it over the files without touching
+// the setting, and picking a place, a press on the dimmed files or Escape
+// slides it away again.
+static void checkSidebarNarrowing(QQuickWindow *window, Settings *settings)
+{
+    const auto visible = [window] { return window->property("sidebarVisible").toBool(); };
+    const auto overlay = [window] { return window->property("sidebarOverlayOpen").toBool(); };
+    QObject *sidebar = findDialog(window, "Sidebar");
+    QVERIFY(sidebar);
+    const QSize wide = window->size();
+    QVERIFY(wide.width() >= 720);
+    QVERIFY(visible());
+    QVERIFY(QMetaObject::invokeMethod(window, "toggleSidebar"));
+    QVERIFY(!visible());
+    QCOMPARE(settings->showSidebar(), false);
+    QVERIFY(QMetaObject::invokeMethod(window, "toggleSidebar"));
+    QVERIFY(visible());
+    QCOMPARE(settings->showSidebar(), true);
+
+    window->resize(600, wide.height());
+    QTRY_VERIFY(window->property("sidebarNarrow").toBool());
+    QVERIFY(!visible());
+    QVERIFY(QMetaObject::invokeMethod(window, "toggleSidebar"));
+    QVERIFY(visible() && overlay());
+    QCOMPARE(settings->showSidebar(), true);
+    const QString path = window->property("currentPath").toString();
+    QVERIFY(QMetaObject::invokeMethod(sidebar, "navigateRequested", Q_ARG(QString, path)));
+    QVERIFY(!overlay());
+
+    QVERIFY(QMetaObject::invokeMethod(window, "toggleSidebar"));
+    QVERIFY(overlay());
+    QTest::qWait(250); // let the slide finish
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      QPoint(window->width() - 40, window->height() / 2));
+    QTRY_VERIFY(!overlay());
+
+    QVERIFY(QMetaObject::invokeMethod(window, "toggleSidebar"));
+    QVERIFY(overlay());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_VERIFY(!overlay());
+
+    // Opened while narrow, then widened: back to the saved setting.
+    QVERIFY(QMetaObject::invokeMethod(window, "toggleSidebar"));
+    window->resize(wide);
+    QTRY_VERIFY(!window->property("sidebarNarrow").toBool());
+    QVERIFY(!overlay());
+    QVERIFY(visible());
+}
+
 static void checkMountQuestion(QQuickWindow *window)
 {
     auto *mounter = window->findChild<Mounter *>();
@@ -483,6 +584,25 @@ void TestQmlViews::selectionAndVirtualDelegates()
         QTRY_VERIFY(findFileRow(tab, server));
     }
     tab->setProperty("searchQuery", "");
+    // Show-hidden is a setting (#3): the tab follows it, and a toggle in the
+    // tab (Ctrl+H, the menus) writes it back for every tab and the next run.
+    auto *settings = engine.singletonInstance<Settings *>("Omanta", "Settings");
+    QVERIFY(settings);
+    QCOMPARE(tab->property("showHidden").toBool(), false);
+    settings->setShowHiddenFiles(true);
+    QTRY_COMPARE(tab->property("showHidden").toBool(), true);
+    tab->setProperty("showHidden", false);
+    QCOMPARE(settings->showHiddenFiles(), false);
+    settings->setShowHiddenFiles(true); // still following after its own write
+    QTRY_COMPARE(tab->property("showHidden").toBool(), true);
+    settings->setShowHiddenFiles(false);
+    QTRY_COMPARE(tab->property("showHidden").toBool(), false);
+    checkSidebarNarrowing(qobject_cast<QQuickWindow *>(window), settings);
+    if (QTest::currentTestFailed())
+        return;
+    checkDialogsCloseByMouse(qobject_cast<QQuickWindow *>(window));
+    if (QTest::currentTestFailed())
+        return;
     checkMountQuestion(qobject_cast<QQuickWindow *>(window));
     if (QTest::currentTestFailed())
         return;

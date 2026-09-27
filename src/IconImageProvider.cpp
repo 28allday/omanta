@@ -53,6 +53,8 @@ const Glyph kGlyphs[] = {
       R"(<path stroke="%C%" stroke-width="1.7" fill="none" d="M12 6.4 6.4 17.6 M12 6.4 17.6 17.6 M6.4 17.6 h11.2"/><path fill="%C%" d="M12 3.9 a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5 z M6.4 15.1 a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5 z M17.6 15.1 a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5 z"/>)" },
     { "grid",
       R"(<rect fill="%C%" x="4.6" y="4.6" width="6.5" height="6.5" rx="1.4"/><rect fill="%C%" x="12.9" y="4.6" width="6.5" height="6.5" rx="1.4"/><rect fill="%C%" x="4.6" y="12.9" width="6.5" height="6.5" rx="1.4"/><rect fill="%C%" x="12.9" y="12.9" width="6.5" height="6.5" rx="1.4"/>)" },
+    { "sidebar",
+      R"(<path fill="%C%" fill-rule="evenodd" d="M4 6 a2 2 0 0 1 2-2 h12 a2 2 0 0 1 2 2 v12 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2-2 z M10.5 5.8 v12.4 H18 a.2 .2 0 0 0 .2-.2 V6 a.2 .2 0 0 0 -.2-.2 z"/>)" },
     { "bookmark",
       R"(<path fill="%C%" d="M7 4.7 A2.7 2.7 0 0 1 9.7 2 h4.6 A2.7 2.7 0 0 1 17 4.7 V20.8 a.8 .8 0 0 1 -1.3 .6 L12 18.3 8.3 21.4 A.8 .8 0 0 1 7 20.8 z"/>)" },
     { "star",
@@ -135,6 +137,7 @@ QString glyphForName(QString name)
 
     // The app's own chrome (not a GIO name): the view-switch button.
     if (name == QLatin1String("view-grid")) return QStringLiteral("grid");
+    if (name == QLatin1String("view-sidebar")) return QStringLiteral("sidebar");
 
     // The sidebar's specials and everything folder-ish.
     if (name == QLatin1String("user-home")) return QStringLiteral("home");
