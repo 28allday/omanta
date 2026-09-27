@@ -104,7 +104,7 @@ Dialog {
                         }
 
                         ToolbarButton {
-                            symbol: "↑"
+                            glyph: "toolbar-up"
                             tip: qsTr("Move up")
                             enabled: !row.locked && row.index > 1
                             onTriggered: {
@@ -114,7 +114,7 @@ Dialog {
                         }
 
                         ToolbarButton {
-                            symbol: "↓"
+                            glyph: "toolbar-down"
                             tip: qsTr("Move down")
                             enabled: !row.locked && row.index >= 1
                                      && row.index < rows.count - 1

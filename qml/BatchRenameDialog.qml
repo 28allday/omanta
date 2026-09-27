@@ -257,11 +257,9 @@ Dialog {
                         elide: Text.ElideMiddle
                         anchors.verticalCenter: parent.verticalCenter
                     }
-                    Text {
-                        textFormat: Text.PlainText
-                        text: "→"
-                        color: Colors.textDim
-                        font.pixelSize: 12
+                    Glyph {
+                        name: "forward"
+                        tint: Colors.textDim
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
