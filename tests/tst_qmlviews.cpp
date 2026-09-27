@@ -431,6 +431,49 @@ static void checkSidebarNarrowing(QQuickWindow *window, Settings *settings)
     QVERIFY(visible());
 }
 
+static void collectItems(QQuickItem *item, const char *property, const QVariant &value,
+                         QList<QQuickItem *> &found)
+{
+    if (item->property(property) == value)
+        found.append(item);
+    for (QQuickItem *child : item->childItems())
+        collectItems(child, property, value, found);
+}
+
+// Reported by email 2026-09-27: a long name and its copy were
+// indistinguishable. One selected item is named in the status line, and in
+// the icon view its whole name is shown over the cells below; a
+// multi-selection keeps the count and shows no overlay.
+static void checkSelectedNameShown(QQuickItem *tab, const QString &longName, const QString &other)
+{
+    const auto fullNames = [tab] {
+        QList<QQuickItem *> all;
+        collectItems(tab, "objectName", QStringLiteral("fullName"), all);
+        QList<QQuickItem *> shown;
+        for (QQuickItem *item : all) {
+            if (item->isVisible())
+                shown.append(item);
+        }
+        return shown;
+    };
+    tab->setProperty("viewMode", "icon");
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, longName)));
+    const QString status = tab->property("statusText").toString();
+    QVERIFY2(status.startsWith(QStringLiteral("“") + longName + QStringLiteral("” selected (")),
+             qPrintable(status));
+    QTRY_COMPARE(fullNames().size(), 1);
+
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, other)));
+    QTRY_COMPARE(fullNames().size(), 0); // short name: nothing to expand
+    QVERIFY(tab->property("statusText").toString().startsWith(QStringLiteral("“") + other));
+
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectAll"));
+    QVERIFY(tab->property("statusText").toString().endsWith(QStringLiteral(" selected")));
+    QTRY_COMPARE(fullNames().size(), 0);
+    QVERIFY(QMetaObject::invokeMethod(tab, "clearSelection"));
+    tab->setProperty("viewMode", "list");
+}
+
 static void checkMountQuestion(QQuickWindow *window)
 {
     auto *mounter = window->findChild<Mounter *>();
@@ -540,6 +583,9 @@ void TestQmlViews::selectionAndVirtualDelegates()
     QVERIFY(QMetaObject::invokeMethod(tab, "clearSelection"));
     QVERIFY(invoke(tab, "selectedPaths").toStringList().isEmpty());
 
+    checkSelectedNameShown(tab, names.first(), names.at(1));
+    if (QTest::currentTestFailed())
+        return;
     checkListIconSizing(qobject_cast<QQuickWindow *>(window), tab, tree, names);
     if (QTest::currentTestFailed())
         return;
@@ -791,11 +837,35 @@ void TestQmlViews::pasteKeepsCopiedFilesOnClipboard()
     QCOMPARE(clipboard->paths(), QStringList{copied});
 
     clipboard->cutFiles({cut});
+    // Reported by email 2026-09-27: a cut looked like a copy until the paste.
+    // Cut files are dimmed in both views; a copied one never is.
+    QCOMPARE(clipboard->cutPaths().keys(), QStringList{cut});
+    auto *tab = qobject_cast<QQuickItem *>(window->property("currentTab").value<QObject *>());
+    QVERIFY(tab);
+    const auto dimmed = [tab](const QString &path) {
+        QQuickItem *delegate = findFileRow(tab, path);
+        if (!delegate)
+            return -1;
+        for (QQuickItem *child : delegate->childItems()) {
+            if (qFuzzyCompare(child->opacity(), 0.5))
+                return 1;
+        }
+        return 0;
+    };
+    tab->setProperty("path", tree.filePath("source"));
+    for (const QString &mode : {QStringLiteral("icon"), QStringLiteral("list")}) {
+        tab->setProperty("viewMode", mode);
+        QTRY_COMPARE(dimmed(cut), 1);
+        QTRY_COMPARE(dimmed(copied), 0);
+    }
+    tab->setProperty("path", tree.filePath("target"));
+    QTRY_COMPARE(tab->property("path").toString(), tree.filePath("target"));
     QVERIFY(QMetaObject::invokeMethod(window, "paste"));
     QTRY_VERIFY(QFileInfo::exists(tree.filePath("target/cut.txt")));
     QTRY_VERIFY(!operations->property("busy").toBool());
     QVERIFY(!QFileInfo::exists(cut));
     QVERIFY(clipboard->paths().isEmpty());
+    QVERIFY(clipboard->cutPaths().isEmpty());
 }
 
 void TestQmlViews::thumbnailsFollowInPlaceEdits()

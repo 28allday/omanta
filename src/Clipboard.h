@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QStringList>
+#include <QVariantMap>
 #include <QtQmlIntegration>
 
 // File cut/copy/paste, on the real system clipboard.
@@ -19,12 +20,17 @@ class Clipboard : public QObject
 
     Q_PROPERTY(bool hasFiles READ hasFiles NOTIFY changed)
     Q_PROPERTY(int count READ count NOTIFY changed)
+    // The files waiting on a cut, as path → true, so a view can dim them the
+    // way Nautilus does: without that, a cut looks exactly like a copy until
+    // the paste. Cached — every delegate reads it on every clipboard change.
+    Q_PROPERTY(QVariantMap cutPaths READ cutPaths NOTIFY changed)
 
 public:
     explicit Clipboard(QObject *parent = nullptr);
 
     bool hasFiles() const { return !paths().isEmpty(); }
     int count() const { return int(paths().size()); }
+    QVariantMap cutPaths() const { return m_cutPaths; }
 
     Q_INVOKABLE void copyFiles(const QStringList &paths);
     Q_INVOKABLE void cutFiles(const QStringList &paths);
@@ -42,4 +48,7 @@ Q_SIGNALS:
 
 private:
     void put(const QStringList &paths, bool cut);
+    void refresh();
+
+    QVariantMap m_cutPaths;
 };

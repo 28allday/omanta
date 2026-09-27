@@ -126,6 +126,9 @@ Item {
                 anchors.centerIn: parent
                 spacing: 6
                 width: parent.width - 12
+                // Cut and waiting for a paste: dimmed, as in Nautilus.
+                opacity: Clipboard.cutPaths[cell.filePath]
+                         || (cell.targetPath !== "" && Clipboard.cutPaths[cell.targetPath]) ? 0.5 : 1
 
                 Image {
                     id: preview
@@ -166,6 +169,8 @@ Item {
                 }
 
                 Text {
+                    id: label
+
                     textFormat: Text.PlainText
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
@@ -175,6 +180,7 @@ Item {
                     elide: Text.ElideRight
                     maximumLineCount: 2
                     wrapMode: Text.Wrap
+                    opacity: fullName.visible ? 0 : 1
                 }
 
                 Repeater {
@@ -191,6 +197,42 @@ Item {
                         font.pixelSize: 10
                         elide: Text.ElideMiddle
                     }
+                }
+            }
+
+            // The whole name of the one selected item, as Nautilus shows it:
+            // a long name and its copy differ only at the end. Drawn over
+            // the cells below rather than in the layout, so the grid never
+            // reflows; only for a single selection, where overlaps can't pile
+            // up.
+            z: fullName.visible ? 1 : 0
+
+            Rectangle {
+                id: fullName
+
+                objectName: "fullName"
+                visible: label.truncated && root.tab.selectionCount === 1
+                         && root.tab.isSelected(cell.name)
+                x: body.x + label.x - 3
+                y: body.y + label.y - 2
+                width: label.width + 6
+                height: fullText.implicitHeight + 4
+                radius: Colors.radius
+                color: Colors.selection
+
+                Text {
+                    id: fullText
+
+                    textFormat: Text.PlainText
+                    anchors.fill: parent
+                    anchors.margins: 2
+                    anchors.leftMargin: 3
+                    anchors.rightMargin: 3
+                    horizontalAlignment: Text.AlignHCenter
+                    text: cell.displayName
+                    color: Colors.selectionText
+                    font.pixelSize: 12
+                    wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                 }
             }
 

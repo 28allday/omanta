@@ -869,7 +869,12 @@ Window {
                 textFormat: Text.PlainText
                 anchors.left: parent.left
                 anchors.leftMargin: 12
+                anchors.right: parent.right
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
+                // A long selected name gives up its middle, keeping the start
+                // and the extension (and the "(copy)" before it).
+                elide: Text.ElideMiddle
                 // While something is running, the status line belongs to it.
                 text: FileOperations.busy ? FileOperations.statusText
                     : FileOperations.lastError !== "" ? FileOperations.lastError

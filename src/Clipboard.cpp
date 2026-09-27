@@ -16,7 +16,19 @@ Clipboard::Clipboard(QObject *parent)
     : QObject(parent)
 {
     if (auto *clipboard = QGuiApplication::clipboard())
-        connect(clipboard, &QClipboard::dataChanged, this, &Clipboard::changed);
+        connect(clipboard, &QClipboard::dataChanged, this, &Clipboard::refresh);
+    refresh();
+}
+
+void Clipboard::refresh()
+{
+    QVariantMap cut;
+    if (isCut()) {
+        for (const QString &path : paths())
+            cut.insert(path, true);
+    }
+    m_cutPaths = cut;
+    Q_EMIT changed();
 }
 
 void Clipboard::put(const QStringList &paths, bool cut)
@@ -42,7 +54,7 @@ void Clipboard::put(const QStringList &paths, bool cut)
     mime->setUrls(urls);
 
     clipboard->setMimeData(mime);
-    Q_EMIT changed();
+    refresh();
 }
 
 void Clipboard::copyFiles(const QStringList &paths)
@@ -108,5 +120,5 @@ void Clipboard::clear()
 {
     if (auto *clipboard = QGuiApplication::clipboard())
         clipboard->clear();
-    Q_EMIT changed();
+    refresh();
 }

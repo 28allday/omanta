@@ -50,6 +50,17 @@ FocusScope {
             return "Loading…";
         const total = files.count;
         const items = total === 1 ? "1 item" : total + " items";
+        // One item selected: name it, Nautilus-style, so a long name and its
+        // copy can be told apart without opening Properties.
+        if (selectionCount === 1) {
+            const row = files.proxyRowForName(Object.keys(selectedNames)[0]);
+            if (row >= 0) {
+                const detail = files.valueAt(row, "isDir")
+                    ? Platform.formatItemCount(files.valueAt(row, showHidden ? "itemCountAll" : "itemCount"))
+                    : Platform.formatSize(files.valueAt(row, "size"));
+                return "“" + files.valueAt(row, "displayName") + "” selected (" + detail + ")";
+            }
+        }
         return selectionCount > 0 ? items + ", " + selectionCount + " selected" : items;
     }
 
