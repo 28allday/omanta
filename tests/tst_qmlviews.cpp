@@ -1186,6 +1186,47 @@ void TestQmlViews::spacePreviewsInSushi()
     QCOMPARE(fake.calls.size(), 7);
     QTest::qWait(1000); // the type-ahead prefix times out
 
+    // Middle-click previews the item under the pointer, in either view.
+    const auto middleClick = [&](const QString &path) {
+        QQuickItem *item = nullptr;
+        QTRY_VERIFY((item = findFileRow(tab, path)));
+        QTest::mouseClick(window, Qt::MiddleButton, Qt::NoModifier,
+                          item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint());
+    };
+    QTest::keyClick(window, Qt::Key_1, Qt::ControlModifier);
+    QTRY_COMPARE(tab->property("viewMode").toString(), QStringLiteral("list"));
+    middleClick(first);
+    QTRY_COMPARE(fake.calls.size(), 8);
+    QCOMPARE(fake.calls.last().uri, firstUri);
+    QVERIFY(!fake.calls.last().toggle);
+    QTRY_VERIFY(previewer->property("visible").toBool());
+    QCOMPARE(tab->property("selectionCount").toInt(), 1);
+    QVERIFY(invoke(tab, "selectedPaths").toStringList() == QStringList{first});
+    // Another item with the preview up: shown once, never toggled shut.
+    middleClick(second);
+    QTRY_COMPARE(fake.calls.size(), 9);
+    QCOMPARE(fake.calls.last().uri, secondUri);
+    QVERIFY(!fake.calls.last().toggle);
+    QTest::qWait(100);
+    QCOMPARE(fake.calls.size(), 9);
+    QVERIFY(previewer->property("visible").toBool());
+    // The same item again closes it, as a second Space does.
+    middleClick(second);
+    QTRY_COMPARE(fake.calls.size(), 10);
+    QVERIFY(fake.calls.last().toggle);
+    QTRY_VERIFY(!previewer->property("visible").toBool());
+
+    QTest::keyClick(window, Qt::Key_2, Qt::ControlModifier);
+    QTRY_COMPARE(tab->property("viewMode").toString(), QStringLiteral("icon"));
+    middleClick(first);
+    QTRY_COMPARE(fake.calls.size(), 11);
+    QCOMPARE(fake.calls.last().uri, firstUri);
+    QTRY_VERIFY(previewer->property("visible").toBool());
+    middleClick(first);
+    QTRY_COMPARE(fake.calls.size(), 12);
+    QVERIFY(fake.calls.last().toggle);
+    QTRY_VERIFY(!previewer->property("visible").toBool());
+
     // No previewer: nothing opens — a look-only key must not open or
     // extract (a folder here, so a regression navigates rather than
     // launching an app on the desktop) — and the window says why.
@@ -1196,7 +1237,7 @@ void TestQmlViews::spacePreviewsInSushi()
     QTRY_VERIFY(window->property("flashText").toString().contains(QStringLiteral("Sushi")));
     QTest::qWait(200);
     QCOMPARE(tab->property("path").toString(), tree.path());
-    QCOMPARE(fake.calls.size(), 7);
+    QCOMPARE(fake.calls.size(), 12);
 }
 
 #include "tst_qmlviews.moc"

@@ -346,6 +346,22 @@ FocusScope {
             root.previewUnavailable();
     }
 
+    // Middle-click: the item under the pointer becomes the selection and is
+    // previewed. Middle-clicking it again toggles, as a second Space does —
+    // without reselecting, which would re-show it through the selection
+    // handler below first. That handler also shows a newly picked item while
+    // the preview is up, so only a closed preview is opened here.
+    function previewAt(row, name) {
+        currentIndex = row;
+        if (selectionCount === 1 && isSelected(name)) {
+            preview(true);
+            return;
+        }
+        selectOnly(name);
+        if (!(Previewer.visible && Previewer.owner === root))
+            preview(false);
+    }
+
     // With the preview up, it follows the selection of the tab that opened
     // it, as in Nautilus — other tabs and windows stay put.
     onSelectedNamesChanged: {

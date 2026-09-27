@@ -340,7 +340,7 @@ Item {
 
                     anchors.fill: parent
                     hoverEnabled: true
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                     drag.target: dragProxy
 
                     onPressed: mouse => {
@@ -368,6 +368,10 @@ Item {
                     onClicked: mouse => {
                         if (mouse.button === Qt.LeftButton && row.inExpander(mouse.x)) {
                             root.tab.toggleExpand(row.index);
+                            return;
+                        }
+                        if (mouse.button === Qt.MiddleButton) {
+                            root.tab.previewAt(row.index, row.name);
                             return;
                         }
                         root.tab.currentIndex = row.index;

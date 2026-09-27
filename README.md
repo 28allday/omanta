@@ -37,7 +37,8 @@ Omarchy theme.
 - Quick preview: Space (or right-click → Preview) shows the selected file in
   Sushi, the previewer stock Omarchy ships — zoomable images, text,
   Markdown, PDF, audio, video, and office files when LibreOffice is
-  installed. Arrow keys step through the folder; Space or Escape closes it
+  installed. Middle-clicking a file previews it too. Arrow keys step through
+  the folder; Space, Escape or another middle-click closes it
 - Search: recursive filename plus full-text (via `localsearch`), date and
   type filters
 - Compress/extract (zip, tar.xz, 7z, encrypted zip), "Extract to…"

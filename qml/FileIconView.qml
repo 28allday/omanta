@@ -269,7 +269,7 @@ Item {
 
                 anchors.fill: parent
                 hoverEnabled: true
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                 drag.target: dragProxy
 
                 onPressed: mouse => {
@@ -287,6 +287,10 @@ Item {
                 }
 
                 onClicked: mouse => {
+                    if (mouse.button === Qt.MiddleButton) {
+                        root.tab.previewAt(cell.index, cell.name);
+                        return;
+                    }
                     root.tab.currentIndex = cell.index;
                     if (mouse.button === Qt.RightButton) {
                         if (!root.tab.isSelected(cell.name))
