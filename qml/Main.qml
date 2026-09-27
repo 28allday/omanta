@@ -217,7 +217,8 @@ Window {
                     // A nested layout defaults to fillWidth: true — it would
                     // fight the path bar for every spare pixel.
                     Layout.fillWidth: false
-                    Layout.preferredWidth: root.sidebarInline ? 192 : -1
+                    Layout.preferredWidth: root.sidebarInline ? sidebar.width - 16 : -1
+                    Layout.rightMargin: root.sidebarInline ? 8 : 0
 
                     // Nautilus 50's show-sidebar button: only while the
                     // sidebar is out of the layout, hidden or narrow.

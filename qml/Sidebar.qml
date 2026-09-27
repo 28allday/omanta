@@ -69,6 +69,8 @@ Rectangle {
         anchors.bottom: opsArea.top
         anchors.topMargin: 6
         anchors.bottomMargin: 6
+        anchors.leftMargin: 6
+        anchors.rightMargin: 6
         clip: true
         model: places
         boundsBehavior: Flickable.StopAtBounds
@@ -86,7 +88,7 @@ Rectangle {
                 visible: parent.section !== "Places"
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
-                width: list.width - 28
+                width: list.width - 16
                 height: 1
                 color: Colors.border
             }
@@ -111,8 +113,9 @@ Rectangle {
                                               && location !== "recent:///"
                                               && location !== "network:///"
 
-            width: list.width - 12
-            x: 6
+            // ListView places its delegates at x 0 and ignores a delegate's
+            // own x, so the 6px inset on each side lives on the view instead.
+            width: list.width
             height: 30
             radius: Colors.radius
             color: current ? Colors.selection
