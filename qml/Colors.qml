@@ -28,7 +28,9 @@ QtObject {
     // What a label sitting on the selection colour must be drawn in — the
     // built-in selections are mid-tones the normal text reads fine on.
     readonly property color selectionText: themed ? Theme.selectionTextColor : (dark ? "#eeeeee" : "#1c1c1c")
-    readonly property color hover: themed ? Theme.hoverColor : (dark ? "#1e1e1e" : "#eaeaea")
+    // The theme's own hover tone, carrying the same opacity as the surfaces
+    // it sits on — solid, it read as a foreign block on a translucent window.
+    readonly property color hover: Qt.alpha(themed ? Theme.hoverColor : (dark ? "#1e1e1e" : "#eaeaea"), surfaceAlpha)
 
     readonly property color error: themed ? Theme.errorColor : "#f7768e"
 
