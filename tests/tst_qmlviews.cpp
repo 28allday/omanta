@@ -500,6 +500,31 @@ static void collectItems(QQuickItem *item, const char *property, const QVariant 
         collectItems(child, property, value, found);
 }
 
+// GitHub #10: clicking the path bar's empty space types a path — in a folder
+// and in Starred, where the one crumb leaves the bar nearly all empty.
+static void checkPathBarClickEdits(QQuickWindow *window, QQuickItem *tab, const QString &folder)
+{
+    auto *bar = findItem(window->contentItem(), "objectName", QStringLiteral("pathBar"));
+    QVERIFY(bar);
+    auto *blank = findItem(bar, "objectName", QStringLiteral("pathBarBlank"));
+    QVERIFY(blank);
+    const QString before = tab->property("path").toString();
+    for (const QString &place : {folder, QStringLiteral("starred:///")}) {
+        QVERIFY(QMetaObject::invokeMethod(tab, "navigate", Q_ARG(QVariant, place)));
+        QTRY_COMPARE(bar->property("path").toString(), place);
+        QVERIFY(!bar->property("editing").toBool());
+        // Just inside the bar's right end, left of the kebab: past the crumbs.
+        const QPointF end = bar->mapToScene(QPointF(bar->width() - 40, bar->height() / 2));
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, end.toPoint());
+        QTRY_VERIFY2(bar->property("editing").toBool(), qPrintable(place));
+        QCOMPARE(tab->property("path").toString(), place); // edited, not navigated
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_VERIFY(!bar->property("editing").toBool());
+    }
+    QVERIFY(QMetaObject::invokeMethod(tab, "navigate", Q_ARG(QVariant, before)));
+    QTRY_COMPARE(bar->property("path").toString(), before);
+}
+
 // Reported by email 2026-09-27: a long name and its copy were
 // indistinguishable. One selected item is named in the status line, and in
 // the icon view its whole name is shown over the cells below; a
@@ -707,6 +732,9 @@ void TestQmlViews::selectionAndVirtualDelegates()
     if (QTest::currentTestFailed())
         return;
     checkDialogsCloseByMouse(qobject_cast<QQuickWindow *>(window));
+    if (QTest::currentTestFailed())
+        return;
+    checkPathBarClickEdits(qobject_cast<QQuickWindow *>(window), tab, tree.path());
     if (QTest::currentTestFailed())
         return;
     checkMountQuestion(qobject_cast<QQuickWindow *>(window));

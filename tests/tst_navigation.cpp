@@ -150,6 +150,10 @@ void TestNavigation::resolvesRelativePaths()
     // Whitespace from a paste should not break navigation.
     QCOMPARE(platform.resolvePath(QStringLiteral("  src  "), QStringLiteral("/home/user")),
              QStringLiteral("/home/user/src"));
+    // GitHub #10: typed in Starred and friends, a bare name means one in home.
+    for (const char *place : {"starred:///", "recent:///", "trash:///", "network:///"})
+        QCOMPARE(platform.resolvePath(QStringLiteral("Documents"), QString::fromLatin1(place)),
+                 QDir::homePath() + QStringLiteral("/Documents"));
 }
 
 void TestNavigation::resolvesAbsolutePaths()

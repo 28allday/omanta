@@ -31,6 +31,9 @@ struct FileEntry
     QString targetPath;   // standard::target-uri as a local path (or URI when
                           // not local) — set for rows in recent:/// and other
                           // backends whose entries point at a file elsewhere
+    bool isPlaceLink = false; // a gvfs mountable or shortcut (an SMB share in
+                              // smb://host/, a host in network:///): opening
+                              // it means going to targetPath, never the entry
 
     // Directory item counts, filled in by DirectoryModel's counting pass —
     // never by fromInfo(), because GIO has no child-count attribute. -1 means

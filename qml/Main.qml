@@ -271,6 +271,7 @@ Window {
 
                 PathBar {
                     id: pathBar
+                    objectName: "pathBar"
 
                     Layout.fillWidth: true
                     Layout.preferredHeight: 32

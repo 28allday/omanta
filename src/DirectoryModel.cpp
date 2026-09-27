@@ -65,7 +65,10 @@ QVariant DirectoryModel::data(const QModelIndex &index, int role) const
     switch (role) {
     case NameRole: return entry.name;
     case DisplayNameRole: return entry.displayName;
-    case FilePathRole: return Location::child(m_path, entry.name);
+    case FilePathRole:
+        // A share or shortcut row stands for where it points: every action
+        // (open, new tab, expand, star) wants that, not the listing entry.
+        return entry.isPlaceLink ? entry.targetPath : Location::child(m_path, entry.name);
     case IsDirRole: return entry.isDir;
     case IsHiddenRole: return entry.isHidden;
     case IsBackupRole: return entry.isBackup;
@@ -103,7 +106,7 @@ QString DirectoryModel::filePathAt(int row) const
 {
     if (row < 0 || row >= m_entries.size())
         return {};
-    return Location::child(m_path, m_entries.at(row).name);
+    return data(index(row), FilePathRole).toString();
 }
 
 int DirectoryModel::indexOfName(const QString &name) const
@@ -526,6 +529,11 @@ void DirectoryModel::setCountItems(bool enabled)
 void DirectoryModel::enqueueCount(const QString &name)
 {
     if (!m_countItems || name.isEmpty() || m_countQueued.contains(name))
+        return;
+    // Counting a share would mount it — every share on the server, just for
+    // listing them.
+    const int row = m_rowByName.value(name, -1);
+    if (row >= 0 && m_entries.at(row).isPlaceLink)
         return;
     m_countQueue.append(name);
     m_countQueued.insert(name);

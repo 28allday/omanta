@@ -25,6 +25,7 @@ private Q_SLOTS:
     void reportsErrorForMissingDirectory();
     void parsesFileAttributes();
     void toleratesSparseFileInfo();
+    void shareRowsOpenTheirTarget();
     void insertsCreatedFileInPlace();
     void removesDeletedFile();
     void handlesRenameAsRemoveAndInsert();
@@ -174,6 +175,33 @@ void TestDirectoryModel::toleratesSparseFileInfo()
     QVERIFY(!entry.isBackup);
     QVERIFY(!entry.isSymlink);
     QCOMPARE(entry.size, qint64(0));
+}
+
+// GitHub #11: a share under smb://host/ is a mountable whose target-uri is
+// the share itself (attributes as gvfs 1.58 reports them). Double-clicking
+// handed the entry to the default app, which failed "Not a directory".
+void TestDirectoryModel::shareRowsOpenTheirTarget()
+{
+    GFileInfo *info = g_file_info_new();
+    g_file_info_set_name(info, "F (STORAGE)");
+    g_file_info_set_file_type(info, G_FILE_TYPE_MOUNTABLE);
+    g_file_info_set_attribute_string(info, G_FILE_ATTRIBUTE_STANDARD_TARGET_URI,
+                                     "smb://server/F%20%28STORAGE%29");
+    const FileEntry share = FileEntry::fromInfo(info);
+    g_object_unref(info);
+
+    QVERIFY(share.isPlaceLink);
+    QVERIFY(share.isDir);
+    QCOMPARE(share.targetPath, QStringLiteral("smb://server/F%20%28STORAGE%29"));
+
+    // A mountable with nowhere to go stays what it was.
+    info = g_file_info_new();
+    g_file_info_set_name(info, "odd");
+    g_file_info_set_file_type(info, G_FILE_TYPE_MOUNTABLE);
+    const FileEntry bare = FileEntry::fromInfo(info);
+    g_object_unref(info);
+    QVERIFY(!bare.isPlaceLink);
+    QVERIFY(!bare.isDir);
 }
 
 void TestDirectoryModel::insertsCreatedFileInPlace()

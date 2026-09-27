@@ -103,6 +103,17 @@ FileEntry FileEntry::fromInfo(GFileInfo *info)
                                              : QString::fromUtf8(target);
     }
 
+    // Shares listed under smb://host/ (and network:/// hosts) are mountables or
+    // shortcuts, not directories: the entry itself cannot be listed or opened
+    // by another app. Nautilus goes to target-uri, so they act as folders here.
+    const auto type = GFileType(g_file_info_get_attribute_uint32(info,
+                                                                 G_FILE_ATTRIBUTE_STANDARD_TYPE));
+    if ((type == G_FILE_TYPE_MOUNTABLE || type == G_FILE_TYPE_SHORTCUT)
+        && !entry.targetPath.isEmpty()) {
+        entry.isPlaceLink = true;
+        entry.isDir = true;
+    }
+
     // Millisecond precision too: an edit within the same second must still
     // change the row, or its thumbnail keeps the old picture.
     if (GDateTime *modified = g_file_info_get_modification_date_time(info)) {

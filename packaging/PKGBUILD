@@ -11,10 +11,10 @@
 # runtime claims the name only when free, so both coexist until cutover.
 
 pkgname=omanta
-pkgver=0.1.18
+pkgver=0.1.19
 pkgrel=1
 pkgdesc="Native file manager for Omarchy (Qt Quick + GIO)"
-arch=('x86_64')
+arch=('x86_64' 'aarch64')
 url="https://github.com/28allday/omanta"
 license=('MIT')
 install="$pkgname.install"

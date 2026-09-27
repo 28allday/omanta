@@ -60,8 +60,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.18/omanta-0.1.18-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.18-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.19/omanta-0.1.19-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.19-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —
@@ -74,6 +74,11 @@ git clone https://github.com/28allday/omanta.git
 cd omanta/packaging
 makepkg -si
 ```
+
+On ARM (aarch64 — Arch Linux ARM, Asahi, ARM laptops and VMs) there is no
+prebuilt package yet, so build it this way. The code has nothing
+architecture-specific, and `makepkg` needs only `base-devel` plus the
+build tools it installs for you.
 
 Installing changes none of your defaults — Nautilus (or whatever you use)
 remains the file manager until you switch.

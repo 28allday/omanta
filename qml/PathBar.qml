@@ -49,6 +49,17 @@ FocusScope {
         border.width: 1
     }
 
+    // GitHub #10: a click on the pill's empty space types a path, as in
+    // Nautilus. Starred, Recent and the like are one crumb and nearly all
+    // empty space, so without this the bar looked read-only there. This one
+    // covers the glyph end; the crumb strip has its own below.
+    MouseArea {
+        anchors.fill: parent
+        visible: !root.editing
+        cursorShape: Qt.IBeamCursor
+        onClicked: root.beginEditing()
+    }
+
     Image {
         id: placeGlyph
 
@@ -76,6 +87,16 @@ FocusScope {
 
         // Keep the deepest crumb in view: that is the one the user is in.
         onContentWidthChanged: contentX = Math.max(0, contentWidth - width)
+
+        // The flickable takes presses over its whole width, so the empty
+        // space after the crumbs needs its own edit trigger.
+        MouseArea {
+            objectName: "pathBarBlank"
+            width: Math.max(crumbFlick.width, crumbRow.width)
+            height: crumbFlick.height
+            cursorShape: Qt.IBeamCursor
+            onClicked: root.beginEditing()
+        }
 
         Row {
             id: crumbRow
@@ -128,7 +149,11 @@ FocusScope {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.navigateRequested(modelData.path)
+                            // The crumb you are in goes nowhere new — edit
+                            // instead, as Nautilus does.
+                            onClicked: index === crumbs.count - 1
+                                ? root.beginEditing()
+                                : root.navigateRequested(modelData.path)
                         }
                     }
                 }
