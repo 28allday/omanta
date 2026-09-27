@@ -75,6 +75,11 @@ cd omanta/packaging
 makepkg -si
 ```
 
+On ARM (aarch64 — Arch Linux ARM, Asahi, ARM laptops and VMs) there is no
+prebuilt package yet, so build it this way. The code has nothing
+architecture-specific, and `makepkg` needs only `base-devel` plus the
+build tools it installs for you.
+
 Installing changes none of your defaults — Nautilus (or whatever you use)
 remains the file manager until you switch.
 
