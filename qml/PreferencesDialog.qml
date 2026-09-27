@@ -54,6 +54,7 @@ Dialog {
 
     function syncFromSettings() {
         foldersFirstSwitch.checked = Settings.sortFoldersFirst;
+        showHiddenSwitch.checked = Settings.showHiddenFiles;
         clickCombo.currentIndex = Settings.clickPolicy === "single" ? 1 : 0;
         treeViewSwitch.checked = Settings.useTreeView;
         createLinkSwitch.checked = Settings.showCreateLink;
@@ -197,6 +198,14 @@ Dialog {
                 PrefSwitch {
                     id: foldersFirstSwitch
                     onToggled: Settings.sortFoldersFirst = checked
+                }
+            }
+
+            PrefRow {
+                label: qsTr("Show Hidden Files")
+                PrefSwitch {
+                    id: showHiddenSwitch
+                    onToggled: Settings.showHiddenFiles = checked
                 }
             }
 

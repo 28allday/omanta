@@ -66,9 +66,25 @@ FocusScope {
     readonly property int minimumZoom: zoomLevels[0]
     readonly property int maximumZoom: zoomLevels[zoomLevels.length - 1]
     readonly property int defaultZoom: viewMode === "list" ? 18 : 64
-    property bool showHidden: false
+    property bool showHidden: Settings.showHiddenFiles
     property int sortKey: FileSortFilterModel.ByName
     property bool sortDescending: false
+
+    // Ctrl+H / menus flip showHidden; persist it like the view mode so new
+    // tabs and restarts start where the user left off (Nautilus's
+    // show-hidden-files). The guard avoids echoing our own write back.
+    onShowHiddenChanged: {
+        if (showHidden !== Settings.showHiddenFiles)
+            Settings.showHiddenFiles = showHidden;
+    }
+
+    Connections {
+        target: Settings
+        function onChanged() {
+            if (root.showHidden !== Settings.showHiddenFiles)
+                root.showHidden = Settings.showHiddenFiles;
+        }
+    }
 
     // Selection is a plain set keyed by filename. Names are stable within a
     // directory, so a selection survives re-sorting and in-place model updates

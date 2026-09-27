@@ -43,6 +43,9 @@ class Settings : public QObject
     // the last-chosen view as default-folder-viewer; switching views here
     // writes this the same way.
     Q_PROPERTY(QString defaultViewMode READ defaultViewMode WRITE setDefaultViewMode NOTIFY changed)
+    // Nautilus's show-hidden-files: Ctrl+H flips it and it sticks across
+    // restarts (key "showHiddenFiles" in ~/.config/omanta/settings).
+    Q_PROPERTY(bool showHiddenFiles READ showHiddenFiles WRITE setShowHiddenFiles NOTIFY changed)
 
     // List-view columns, Nautilus's two-key shape: the full order (every
     // column id, reorderable) and the visible subset. Name is always visible
@@ -79,6 +82,7 @@ public:
     QString showDirectoryItemCounts() const { return choiceFor("showDirectoryItemCounts", {"local-only", "never", "always"}); }
     QString dateTimeFormat() const { return choiceFor("dateTimeFormat", {"simple", "detailed"}); }
     QString defaultViewMode() const { return choiceFor("defaultViewMode", {"icon", "list"}); }
+    bool showHiddenFiles() const { return boolFor("showHiddenFiles", false); }
     QStringList listColumnOrder() const;
     QStringList listVisibleColumns() const;
     QStringList iconCaptions() const;
@@ -102,6 +106,7 @@ public:
     void setShowDirectoryItemCounts(const QString &value) { set("showDirectoryItemCounts", value); }
     void setDateTimeFormat(const QString &value) { set("dateTimeFormat", value); }
     void setDefaultViewMode(const QString &value) { set("defaultViewMode", value); }
+    void setShowHiddenFiles(bool value) { set("showHiddenFiles", value ? "true" : "false"); }
     void setListColumnOrder(const QStringList &value) { set("listColumnOrder", value.join(QLatin1Char(','))); }
     void setListVisibleColumns(const QStringList &value) { set("listVisibleColumns", value.join(QLatin1Char(','))); }
     void setIconCaptions(const QStringList &value) { set("iconCaptions", value.join(QLatin1Char(','))); }
