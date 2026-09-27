@@ -109,7 +109,7 @@ Dialog {
                     text: qsTr("+ Add")
                     onClicked: addMenu.popup(addButton, 0, addButton.height)
 
-                    Menu {
+                    OmMenu {
                         id: addMenu
 
                         // Inserting at the cursor rather than appending is
@@ -121,20 +121,20 @@ Dialog {
                             templateField.forceActiveFocus();
                         }
 
-                        MenuItem {
+                        OmMenuItem {
                             text: qsTr("1, 2, 3, 4")
                             onTriggered: addMenu.insert("[1, 2, 3]")
                         }
-                        MenuItem {
+                        OmMenuItem {
                             text: qsTr("01, 02, 03, 04")
                             onTriggered: addMenu.insert("[01, 02, 03]")
                         }
-                        MenuItem {
+                        OmMenuItem {
                             text: qsTr("001, 002, 003, 004")
                             onTriggered: addMenu.insert("[001, 002, 003]")
                         }
-                        MenuSeparator {}
-                        MenuItem {
+                        OmMenuSeparator {}
+                        OmMenuItem {
                             text: qsTr("Original File Name")
                             onTriggered: addMenu.insert("[Original file name]")
                         }
@@ -167,12 +167,12 @@ Dialog {
                     text: labels[renamer.numberingOrder] + "  ▾"
                     onClicked: orderMenu.popup(orderButton, 0, orderButton.height)
 
-                    Menu {
+                    OmMenu {
                         id: orderMenu
 
                         Repeater {
                             model: orderButton.labels
-                            MenuItem {
+                            OmMenuItem {
                                 required property int index
                                 required property string modelData
                                 text: modelData
