@@ -60,6 +60,12 @@ omanta_test(tst_properties
     ${CMAKE_SOURCE_DIR}/src/FileProperties.cpp
 )
 
+omanta_test(tst_openwith
+    ${CMAKE_SOURCE_DIR}/src/Location.cpp
+    ${CMAKE_SOURCE_DIR}/src/Platform.cpp
+    ${CMAKE_SOURCE_DIR}/src/ArchiveEngine.cpp
+)
+
 omanta_test(tst_theme
     ${CMAKE_SOURCE_DIR}/src/SystemTheme.cpp
 )

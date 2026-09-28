@@ -2,6 +2,8 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
+#include <QVariantList>
 
 // Small bridge for the things QML cannot do itself: launching files with their
 // default application, opening a terminal, and formatting sizes the way the
@@ -84,6 +86,17 @@ public:
     // Hands the file to whatever the desktop considers its default handler.
     // Returns false if nothing is registered for the type.
     Q_INVOKABLE bool openPath(const QString &path) const;
+
+    // Applications registered for this path's type, best first, each a map of
+    // id/name/iconSource/isDefault. Empty for folders, empty paths, unknown
+    // types and anything with no registered handler. Synchronous answer for
+    // the context menu's Open With submenu — FileProperties answers the same
+    // question asynchronously for its dialog.
+    Q_INVOKABLE QVariantList applicationsFor(const QString &path) const;
+
+    // Launches `paths` with the given desktop-file id. The id must be one of
+    // the entries applicationsFor() returned for the type.
+    Q_INVOKABLE bool openWith(const QString &applicationId, const QStringList &paths) const;
 
     // Opens the user's terminal in `directory`. Resolves through $TERMINAL and
     // the xdg-terminal-exec convention rather than naming a terminal, so this
