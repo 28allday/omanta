@@ -123,7 +123,12 @@ Item {
 
             Column {
                 id: body
-                anchors.centerIn: parent
+                // Top-aligned, not centred: a centred column rises with a
+                // two-line name, so neighbouring icons sat at different
+                // heights. 8 is where a two-line cell's icon already sat.
+                anchors.top: parent.top
+                anchors.topMargin: 8
+                anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 6
                 width: parent.width - 12
                 // Cut and waiting for a paste: dimmed, as in Nautilus.

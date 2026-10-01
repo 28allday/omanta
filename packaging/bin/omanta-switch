@@ -130,21 +130,18 @@ add_menu_block() {
     remove_menu_block
     work="$(mktemp)"
     cp "$MENU_FILE" "$work"
-    # Insert the managed block just before the file's closing brace. The
-    # trailing comma on the entry is safe: the menu parser strips commas
-    # before } or ], so the block works in any position.
+    # Insert the managed block just after the file's opening brace. The
+    # entry's own trailing comma then separates it from whatever follows,
+    # so the person's last entry needs no comma of its own (issue #26); a
+    # comma before the closing brace is fine, the menu parser strips it.
+    local inserted=0
     awk -v begin="  $MENU_BEGIN" -v end="  $MENU_END" -v entry="$(menu_entry)" '
-        { lines[NR] = $0 }
-        /^\}[[:space:]]*$/ { last = NR }
-        END {
-            for (i = 1; i <= NR; i++) {
-                if (i == last) { print begin; print entry; print end }
-                print lines[i]
-            }
-        }
-    ' "$work" > "$MENU_FILE"
+        { print }
+        !done && /^\{[[:space:]]*$/ { print begin; print entry; print end; done = 1 }
+        END { exit !done }
+    ' "$work" > "$MENU_FILE" && inserted=1
     rm -f "$work"
-    if ! validate_menu_file; then
+    if [ "$inserted" -ne 1 ] || ! validate_menu_file; then
         cp "$backup" "$MENU_FILE"
         rm -f "$backup"
         die "$MENU_FILE would not parse after the edit — restored the original"

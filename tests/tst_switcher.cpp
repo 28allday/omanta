@@ -20,6 +20,7 @@ private Q_SLOTS:
     void init();
     void cleanup();
     void offersTheToggleMenuOnceOnOmarchy();
+    void installsIntoAHandWrittenMenu();
     void leavesOtherDesktopsAlone();
     void switchesTheDefaultBothWays();
     void unavailableWithoutTheScript();
@@ -127,6 +128,35 @@ void TestSwitcher::offersTheToggleMenuOnceOnOmarchy()
     relaunched.offerToggleMenu(&reread);
     QVERIFY(settle(relaunched));
     QVERIFY(!relaunched.menuInstalled());
+}
+
+void TestSwitcher::installsIntoAHandWrittenMenu()
+{
+    // A hand-written extension file rarely ends its last entry with a comma
+    // (issue #26): the row must still go in, and the person's entries stay.
+    QVERIFY(QDir().mkpath(m_home->filePath("config/omarchy/extensions")));
+    {
+        QFile menu(menuFile());
+        QVERIFY(menu.open(QIODevice::WriteOnly));
+        menu.write("{\n  \"some.entry\": {\"label\":\"A\"},\n  \"other.entry\": {\"label\":\"B\"}\n}\n");
+    }
+    DefaultFileManager manager;
+    QVERIFY(settle(manager));
+    manager.setMenuInstalled(true);
+    QVERIFY(settle(manager));
+    QVERIFY2(manager.menuInstalled(), qPrintable(manager.lastError()));
+
+    // Installing again replaces the block rather than adding a second one.
+    manager.setMenuInstalled(true);
+    QVERIFY(settle(manager));
+    QVERIFY2(manager.menuInstalled(), qPrintable(manager.lastError()));
+
+    QFile menu(menuFile());
+    QVERIFY(menu.open(QIODevice::ReadOnly));
+    const QByteArray contents = menu.readAll();
+    QCOMPARE(contents.count("omanta-switch toggle"), 1);
+    QVERIFY(contents.contains("\"some.entry\": {\"label\":\"A\"},\n"));
+    QVERIFY(contents.contains("\"other.entry\": {\"label\":\"B\"}\n}"));
 }
 
 void TestSwitcher::leavesOtherDesktopsAlone()

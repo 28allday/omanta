@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
     app.setApplicationDisplayName(QStringLiteral("Files"));
     app.setOrganizationDomain(QStringLiteral("omarchy.org"));
     app.setDesktopFileName(QStringLiteral("omanta"));
-    app.setApplicationVersion(QStringLiteral("0.1.20"));
+    app.setApplicationVersion(QStringLiteral("0.1.21"));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Browse files."));
@@ -118,6 +118,12 @@ int main(int argc, char *argv[])
         if (forwardToRunningInstance(paths, parser.isSet(newWindowOption), selectPath))
             return 0;
     }
+
+    // Qt Quick's default distance-field text ignores fontconfig hinting and
+    // subpixel antialiasing, so omanta's labels read softer than every GTK
+    // app beside it. Native rendering draws them the way the rest of the
+    // desktop does.
+    QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
 
     QQmlApplicationEngine engine;
     engine.addImageProvider(QStringLiteral("fileicon"), new IconImageProvider);

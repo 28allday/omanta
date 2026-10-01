@@ -18,6 +18,7 @@ private Q_SLOTS:
     void foldersStayFirstWhenReversed();
     void sortsNamesNaturally();
     void sortsCaseInsensitively();
+    void hiddenNamesSortAfterVisibleOnes();
     void sortsBySize();
     void sizeSortGroupsFoldersByItemCount();
     void sizeSortCountFollowsHiddenToggle();
@@ -129,6 +130,29 @@ void TestSortFilter::sortsNamesNaturally()
     QTRY_COMPARE(proxy.rowCount(), 5);
     QCOMPARE(visible(proxy),
              (QStringList{ "file1.txt", "file2.txt", "file9.txt", "file10.txt", "file20.txt" }));
+}
+
+void TestSortFilter::hiddenNamesSortAfterVisibleOnes()
+{
+    // Nautilus sorts names starting with "." or "#" last within each group,
+    // instead of letting the collator put the punctuation first (#21).
+    TempTree tree;
+    tree.makeDir(".config");
+    tree.makeDir("Documents");
+    tree.writeFile(".bashrc");
+    tree.writeFile("#draft#");
+    tree.writeFile("notes.txt");
+    tree.writeFile("a.txt");
+
+    DirectoryModel model;
+    FileSortFilterModel proxy;
+    proxy.setSourceModel(&model);
+    proxy.setShowHidden(true);
+    model.setPath(tree.path());
+
+    QTRY_COMPARE(proxy.rowCount(), 6);
+    QCOMPARE(visible(proxy),
+             (QStringList{ "Documents", ".config", "a.txt", "notes.txt", ".bashrc", "#draft#" }));
 }
 
 void TestSortFilter::sortsCaseInsensitively()

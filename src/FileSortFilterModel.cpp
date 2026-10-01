@@ -217,6 +217,13 @@ bool FileSortFilterModel::lessThan(const QModelIndex &left, const QModelIndex &r
     // timestamps still produce a stable, predictable order.
     const QString l = left.data(DirectoryModel::DisplayNameRole).toString();
     const QString r = right.data(DirectoryModel::DisplayNameRole).toString();
+    // Nautilus's compare_by_display_name: names starting with "." or "#"
+    // sort last, rather than first as the collator would put them (#21).
+    const auto sortsLast = [](const QString &name) {
+        return name.startsWith(QLatin1Char('.')) || name.startsWith(QLatin1Char('#'));
+    };
+    if (sortsLast(l) != sortsLast(r))
+        return sortsLast(r);
     return m_collator.compare(l, r) < 0;
 }
 

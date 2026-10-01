@@ -173,12 +173,22 @@ FocusScope {
         visible: !root.editing
         color: kebabMouse.containsMouse ? Colors.hover : "transparent"
 
-        Text {
-            textFormat: Text.PlainText
+        // Three drawn dots rather than "\u22ee": the font glyph's dots snap
+        // to the pixel grid one by one and come out unevenly spaced.
+        Column {
             anchors.centerIn: parent
-            text: "\u22ee"
-            color: Colors.text
-            font.pixelSize: 14
+            spacing: 2
+
+            Repeater {
+                model: 3
+
+                Rectangle {
+                    width: 3
+                    height: 3
+                    radius: 1.5
+                    color: Colors.text
+                }
+            }
         }
 
         MouseArea {
