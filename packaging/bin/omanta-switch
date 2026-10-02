@@ -10,11 +10,17 @@
 #     in ~/.config/hypr/bindings.lua (hl.unbind + o.bind, the documented
 #     override pattern — Omarchy's own files are never touched)
 #
-# The org.freedesktop.FileManager1 D-Bus name is claimed at runtime by
-# whichever file manager starts first while the name is free; omanta
-# declines it when Nautilus owns it. Switching therefore also means
-# closing the other file manager's windows — the script says so rather
-# than killing anything.
+#   - D-Bus activation of org.freedesktop.FileManager1: a user-level
+#     .service file in ~/.local/share/dbus-1/services shadows the one
+#     Nautilus ships in /usr/share, so "show in folder" from a browser
+#     starts omanta when no file manager is running. Switching back
+#     removes it and the Nautilus one applies again.
+#
+# While a file manager is running, org.freedesktop.FileManager1 belongs
+# to whichever one claimed it first; omanta declines it when Nautilus
+# owns it and takes it over once Nautilus exits. Switching therefore
+# also means closing the other file manager's windows — the script says
+# so rather than killing anything.
 #
 # install-menu adds a checkbox row to the Omarchy Toggle menu
 # (SUPER+CTRL+O) via ~/.config/omarchy/extensions/omarchy-menu.jsonc;
@@ -29,6 +35,7 @@ OMANTA_DESKTOP="omanta.desktop"
 NAUTILUS_DESKTOP="org.gnome.Nautilus.desktop"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 BINDINGS_FILE="$CONFIG_HOME/hypr/bindings.lua"
+DBUS_SERVICE_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/org.freedesktop.FileManager1.service"
 MENU_FILE="$CONFIG_HOME/omarchy/extensions/omarchy-menu.jsonc"
 BLOCK_BEGIN="-- >>> omanta-switch managed block, do not edit by hand"
 BLOCK_END="-- <<< omanta-switch managed block"
@@ -94,6 +101,55 @@ add_bindings_block() {
     printf '\n%s\n' "$(bindings_block)" >> "$BINDINGS_FILE"
 }
 
+omanta_binary() {
+    # Installed beside this script by the package and by bin/install; PATH
+    # covers anything else (a dev checkout running the script in place).
+    local sibling
+    sibling="$(dirname "$(readlink -f "$0")")/omanta"
+    if [ -x "$sibling" ]; then
+        echo "$sibling"
+    else
+        command -v omanta || die "omanta not found beside $0 or on PATH"
+    fi
+}
+
+shell_quote() {
+    # Single-quoted for the D-Bus Exec= parser, which follows shell rules.
+    local q="'\\''"
+    printf "'%s'" "${1//\'/$q}"
+}
+
+add_dbus_service() {
+    local omanta_bin
+    omanta_bin="$(omanta_binary)" || exit 1
+    mkdir -p "$(dirname "$DBUS_SERVICE_FILE")"
+    # Nothing removes this file if omanta is uninstalled without switching
+    # back first, and a dangling Exec would break "show in folder" for good
+    # (it shadows the Nautilus file). So when omanta is gone the file deletes
+    # itself and hands this one request to Nautilus.
+    # shellcheck disable=SC2094 # the path is only quoted into the text, never read
+    cat > "$DBUS_SERVICE_FILE" <<EOF
+# Written by omanta-switch; \`omanta-switch nautilus\` removes it.
+[D-BUS Service]
+Name=org.freedesktop.FileManager1
+Exec=/bin/sh -c 'if [ -x "\$0" ]; then exec "\$0" --service; fi; rm -f -- "\$1"; busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus ReloadConfig >/dev/null 2>&1; exec nautilus --gapplication-service' $(shell_quote "$omanta_bin") $(shell_quote "$DBUS_SERVICE_FILE")
+EOF
+    reload_dbus
+}
+
+remove_dbus_service() {
+    [ -f "$DBUS_SERVICE_FILE" ] || return 0
+    rm -f "$DBUS_SERVICE_FILE"
+    reload_dbus
+}
+
+reload_dbus() {
+    # Both dbus-broker and dbus-daemon rescan their service directories on
+    # ReloadConfig; without it the change waits for the next login.
+    busctl --user call org.freedesktop.DBus /org/freedesktop/DBus \
+        org.freedesktop.DBus ReloadConfig >/dev/null 2>&1 || true
+}
+
 reload_hyprland() {
     [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && hyprctl reload >/dev/null 2>&1 || true
 }
@@ -152,15 +208,17 @@ add_menu_block() {
 switch_to_omanta() {
     apply_defaults "$OMANTA_DESKTOP"
     add_bindings_block
+    add_dbus_service
     reload_hyprland
     echo "Default file manager: omanta"
     echo "SUPER+SHIFT+F now launches omanta. Close any open Nautilus windows"
-    echo "so omanta can claim org.freedesktop.FileManager1 on its next start."
+    echo "so omanta can take over \"show in folder\" (org.freedesktop.FileManager1)."
 }
 
 switch_to_nautilus() {
     apply_defaults "$NAUTILUS_DESKTOP"
     remove_bindings_block
+    remove_dbus_service
     reload_hyprland
     echo "Default file manager: Nautilus (stock Omarchy state restored)"
     echo "Close any open omanta windows so Nautilus can claim"
@@ -180,6 +238,11 @@ status() {
         echo "Toggle-menu entry       : installed"
     else
         echo "Toggle-menu entry       : not installed"
+    fi
+    if [ -f "$DBUS_SERVICE_FILE" ]; then
+        echo "FileManager1 activation : omanta (user .service file)"
+    else
+        echo "FileManager1 activation : stock (Nautilus)"
     fi
     if command -v gdbus >/dev/null; then
         owner="$(gdbus call --session --dest org.freedesktop.DBus \
