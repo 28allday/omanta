@@ -1,4 +1,5 @@
 #include "FileProperties.h"
+#include "Applications.h"
 #include "Location.h"
 
 #include <QDir>
@@ -456,100 +457,14 @@ QString FileProperties::modeToText(int mode)
 
 QVariantList FileProperties::applications() const
 {
-    QVariantList result;
-    if (m_paths.size() != 1 || m_contentType.isEmpty() || m_isDir)
-        return result;
-
-    const QByteArray type = m_contentType.toUtf8();
-
-    QString defaultId;
-    if (GAppInfo *fallback = g_app_info_get_default_for_type(type.constData(), FALSE)) {
-        if (const char *id = g_app_info_get_id(fallback))
-            defaultId = QString::fromUtf8(id);
-        g_object_unref(fallback);
-    }
-
-    GList *all = g_app_info_get_all_for_type(type.constData());
-    for (GList *item = all; item; item = item->next) {
-        auto *application = static_cast<GAppInfo *>(item->data);
-        const char *id = g_app_info_get_id(application);
-        if (!id)
-            continue;
-
-        QStringList iconNames;
-        if (GIcon *icon = g_app_info_get_icon(application)) {
-            if (G_IS_THEMED_ICON(icon)) {
-                const gchar *const *names = g_themed_icon_get_names(G_THEMED_ICON(icon));
-                for (int i = 0; names && names[i]; ++i)
-                    iconNames.append(QString::fromUtf8(names[i]));
-            }
-        }
-        if (iconNames.isEmpty())
-            iconNames.append(QStringLiteral("application-x-executable"));
-
-        result.append(QVariantMap{
-            { QStringLiteral("id"), QString::fromUtf8(id) },
-            { QStringLiteral("name"), QString::fromUtf8(g_app_info_get_display_name(application)) },
-            { QStringLiteral("iconSource"),
-              QStringLiteral("image://fileicon/") + iconNames.join(QLatin1Char(',')) },
-            { QStringLiteral("isDefault"), QString::fromUtf8(id) == defaultId },
-        });
-    }
-    g_list_free_full(all, g_object_unref);
-
-    return result;
+    if (m_paths.size() != 1 || m_isDir)
+        return {};
+    return Applications::forType(m_contentType);
 }
-
-namespace {
-
-// Finds the GAppInfo behind a desktop-file id. g_app_info_get_all_for_type is
-// the source of the ids the dialog shows, so it is the list to look them up in
-// — a desktop id can name an entry that GDesktopAppInfo alone will not load.
-GAppInfo *findApplication(const QString &applicationId, const QString &contentType)
-{
-    const QByteArray wanted = applicationId.toUtf8();
-    GList *all = g_app_info_get_all_for_type(contentType.toUtf8().constData());
-    GAppInfo *found = nullptr;
-
-    for (GList *item = all; item; item = item->next) {
-        auto *application = static_cast<GAppInfo *>(item->data);
-        const char *id = g_app_info_get_id(application);
-        if (id && wanted == id) {
-            found = static_cast<GAppInfo *>(g_object_ref(application));
-            break;
-        }
-    }
-
-    g_list_free_full(all, g_object_unref);
-    return found;
-}
-
-} // namespace
 
 bool FileProperties::launchWith(const QString &applicationId) const
 {
-    if (m_paths.isEmpty())
-        return false;
-
-    GAppInfo *application = findApplication(applicationId, m_contentType);
-    if (!application)
-        return false;
-
-    GList *files = nullptr;
-    for (const QString &path : m_paths)
-        files = g_list_append(files, Location::make(path));
-
-    GError *error = nullptr;
-    const bool ok = g_app_info_launch(application, files, nullptr, &error);
-    if (!ok) {
-        qWarning("omanta: could not launch %s: %s", qUtf8Printable(applicationId),
-                 error ? error->message : "unknown");
-    }
-    g_clear_error(&error);
-
-    g_list_free_full(files, g_object_unref);
-    g_object_unref(application);
-    return ok;
+    return Applications::launch(applicationId, m_contentType, m_paths);
 }
 
 bool FileProperties::setDefaultApplication(const QString &applicationId)
@@ -557,7 +472,7 @@ bool FileProperties::setDefaultApplication(const QString &applicationId)
     if (m_contentType.isEmpty())
         return false;
 
-    GAppInfo *application = findApplication(applicationId, m_contentType);
+    GAppInfo *application = Applications::find(applicationId, m_contentType);
     if (!application)
         return false;
 

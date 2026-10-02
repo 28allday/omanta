@@ -134,14 +134,21 @@ Window {
     // Quick Controls (menus, dialogs, fields, scrollbars) paint from the
     // palette. Without this they wear the style's stock grey and look like
     // a foreign toolkit dropped into an Omarchy window.
+    //
+    // The text roles are set per group, never bare: a bare role writes all
+    // three groups, so every theme change (Colors re-binding) overwrote
+    // disabled.* and disabled menu entries drew at full strength.
     palette {
         window: Colors.chrome
-        windowText: Colors.text
         base: Colors.window
         alternateBase: Colors.chrome
-        text: Colors.text
         button: Colors.chrome
-        buttonText: Colors.text
+        active.text: Colors.text
+        active.windowText: Colors.text
+        active.buttonText: Colors.text
+        inactive.text: Colors.text
+        inactive.windowText: Colors.text
+        inactive.buttonText: Colors.text
         highlight: Colors.selection
         highlightedText: Colors.selectionText
         mid: Colors.border
@@ -239,11 +246,25 @@ Window {
                         onTriggered: root.searchOpen ? root.closeSearch() : root.openSearch()
                     }
 
+                    // Issue #28: New Folder one click away, not only in the
+                    // ⋮ and right-click menus.
+                    ToolbarButton {
+                        id: newFolderButton
+                        objectName: "newFolderButton"
+                        symbol: "+"
+                        tip: qsTr("New Folder (Ctrl+Shift+N)")
+                        enabled: root.currentTab !== null && root.viewWritable
+                        onTriggered: root.newFolder()
+                    }
+
                     Text {
                         textFormat: Text.PlainText
                         visible: root.sidebarInline
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignHCenter
+                        // Search and + sit to the left, only the menu to the
+                        // right: pad by one button so the name stays centred.
+                        rightPadding: newFolderButton.width + 4
                         text: "Files"
                         color: Colors.text
                         font.pixelSize: 14
@@ -1726,6 +1747,7 @@ Window {
 
     Menu {
         id: contextMenu
+        objectName: "contextMenu"
 
         // Sampled when the menu opens: the bookmarks file has no notify
         // signal a binding could follow — and the user actions depend on
@@ -1737,12 +1759,26 @@ Window {
         property bool selectionExtractable: false
         property var selectionActions: []
         property var actionPaths: []
+        property var openWithApps: []
+        property string openWithPath: ""
         property var templateFiles: []
         property bool newDocumentShown: false
         onAboutToShow: {
             folderBookmarked = root.currentTab
                 ? sidebar.isBookmarked(root.currentTab.path) : false;
             actionPaths = root.selection();
+            // The Open With submenu is a single local file's answer: folders
+            // open in the file manager itself, several files have no shared
+            // handler list, and a remote URI would stall the menu on a
+            // synchronous network stat.
+            if (actionPaths.length === 1 && Platform.isLocal(actionPaths[0])
+                && !Platform.isDir(actionPaths[0])) {
+                openWithPath = actionPaths[0];
+                openWithApps = Platform.applicationsFor(actionPaths[0]);
+            } else {
+                openWithPath = "";
+                openWithApps = [];
+            }
             // Where Open in Terminal lands: one selected local folder is
             // itself the place; one selected local file means its folder —
             // which in Recent is the target file's real location, since the
@@ -1787,6 +1823,41 @@ Window {
             text: "Open"
             enabled: root.currentTab && root.currentTab.selectionCount > 0
             onTriggered: root.currentTab.activate(root.currentTab.currentIndex)
+        }
+
+        // Nautilus's Open With submenu: the apps registered for this file's
+        // type, then the full chooser. A static submenu rather than an
+        // inserted/removed one: it stays put, greyed out when the selection
+        // is not one local file.
+        Menu {
+            id: openWithMenu
+            title: qsTr("Open With")
+            enabled: contextMenu.openWithPath !== ""
+
+            Instantiator {
+                model: contextMenu.openWithApps
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.name
+                    icon.source: modelData.iconSource
+                    onTriggered: Platform.openWith(modelData.id, [contextMenu.openWithPath])
+                }
+                onObjectAdded: (index, object) => openWithMenu.insertItem(index, object)
+                onObjectRemoved: (index, object) => openWithMenu.removeItem(object)
+            }
+
+            MenuSeparator {
+                visible: contextMenu.openWithApps.length > 0
+                height: visible ? implicitHeight : 0
+            }
+
+            MenuItem {
+                text: qsTr("Other Application…")
+                onTriggered: {
+                    propertiesDialog.show([contextMenu.openWithPath]);
+                    propertiesDialog.selectTab(2);
+                }
+            }
         }
 
         MenuItem {

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(omanta VERSION 0.1.22 LANGUAGES CXX)
+project(omanta VERSION 0.1.23 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,6 +17,8 @@ qt_policy(SET QTP0004 NEW)
 set(OMANTA_SOURCES
     src/Application.cpp
     src/Application.h
+    src/Applications.cpp
+    src/Applications.h
     src/ArchiveEngine.cpp
     src/ArchiveEngine.h
     src/BatchRenamer.cpp

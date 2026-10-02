@@ -36,6 +36,7 @@ omanta_test(tst_navigation
     ${CMAKE_SOURCE_DIR}/src/Location.cpp
     ${CMAKE_SOURCE_DIR}/src/NavigationHistory.cpp
     ${CMAKE_SOURCE_DIR}/src/Platform.cpp
+    ${CMAKE_SOURCE_DIR}/src/Applications.cpp
     ${CMAKE_SOURCE_DIR}/src/ArchiveEngine.cpp
 )
 
@@ -58,6 +59,14 @@ omanta_test(tst_thumbnails
 omanta_test(tst_properties
     ${CMAKE_SOURCE_DIR}/src/Location.cpp
     ${CMAKE_SOURCE_DIR}/src/FileProperties.cpp
+    ${CMAKE_SOURCE_DIR}/src/Applications.cpp
+)
+
+omanta_test(tst_openwith
+    ${CMAKE_SOURCE_DIR}/src/Location.cpp
+    ${CMAKE_SOURCE_DIR}/src/Platform.cpp
+    ${CMAKE_SOURCE_DIR}/src/Applications.cpp
+    ${CMAKE_SOURCE_DIR}/src/ArchiveEngine.cpp
 )
 
 omanta_test(tst_theme

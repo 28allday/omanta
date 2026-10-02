@@ -502,6 +502,87 @@ static void collectItems(QQuickItem *item, const char *property, const QVariant 
         collectItems(child, property, value, found);
 }
 
+// Disabled menu entries must look disabled: with nothing selected, Cut is
+// off and New Folder is on, and the two must not share a text colour.
+static void checkDisabledMenuItemsDim(QQuickWindow *window, QQuickItem *tab, const QString &folder)
+{
+    QObject *menu = nullptr;
+    for (QObject *child : window->findChildren<QObject *>()) {
+        if (child->objectName() == QLatin1String("contextMenu"))
+            menu = child;
+    }
+    QVERIFY(menu);
+    const QString before = tab->property("path").toString();
+    QVERIFY(QMetaObject::invokeMethod(tab, "navigate", Q_ARG(QVariant, folder)));
+    QTRY_COMPARE(tab->property("path").toString(), folder);
+    QVERIFY(QMetaObject::invokeMethod(tab, "clearSelection"));
+    QVERIFY(QMetaObject::invokeMethod(menu, "popup"));
+    QTRY_VERIFY(menu->property("opened").toBool());
+
+    auto entry = [menu](const QString &text) -> QQuickItem * {
+        const int count = menu->property("count").toInt();
+        for (int i = 0; i < count; ++i) {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(menu, "itemAt", Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
+            if (item && item->property("text").toString() == text)
+                return item;
+        }
+        return nullptr;
+    };
+    QQuickItem *cut = entry(QStringLiteral("Cut"));
+    QQuickItem *newFolder = entry(QStringLiteral("New Folder"));
+    QVERIFY(cut && newFolder);
+    QVERIFY(!cut->isEnabled());
+    QVERIFY(newFolder->isEnabled());
+    auto colour = [](QQuickItem *item) {
+        auto *label = item->property("contentItem").value<QQuickItem *>();
+        return label ? label->property("color").value<QColor>() : QColor();
+    };
+    const QColor on = colour(newFolder);
+    const QColor off = colour(cut);
+    QVERIFY(on.isValid() && off.isValid());
+    QVERIFY2(on != off, qPrintable(off.name()));
+
+    QVERIFY(QMetaObject::invokeMethod(menu, "close"));
+    QTRY_VERIFY(!menu->property("visible").toBool());
+    QVERIFY(QMetaObject::invokeMethod(tab, "navigate", Q_ARG(QVariant, before)));
+    QTRY_COMPARE(tab->property("path").toString(), before);
+}
+
+// GitHub #28: the header's + button asks for a new folder's name, and
+// greys out where New Folder would do nothing (the virtual views).
+static void checkNewFolderButton(QQuickWindow *window, QQuickItem *tab, const QString &folder)
+{
+    auto *button = findItem(window->contentItem(), "objectName", QStringLiteral("newFolderButton"));
+    QVERIFY(button);
+    QObject *prompt = nullptr;
+    for (QObject *child : window->findChildren<QObject *>()) {
+        if (QByteArray(child->metaObject()->className()).startsWith("PromptDialog")
+            && child->property("prompt").toString() == QStringLiteral("Name for the new folder"))
+            prompt = child;
+    }
+    QVERIFY(prompt);
+
+    const QString before = tab->property("path").toString();
+    QVERIFY(QMetaObject::invokeMethod(tab, "navigate", Q_ARG(QVariant, folder)));
+    QTRY_VERIFY(button->isEnabled());
+    const QPointF centre = button->mapToScene(QPointF(button->width() / 2, button->height() / 2));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, centre.toPoint());
+    QTRY_VERIFY(prompt->property("opened").toBool());
+    QCOMPARE(prompt->property("initialText").toString(), QStringLiteral("New Folder"));
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_VERIFY(!prompt->property("visible").toBool());
+
+    QVERIFY(QMetaObject::invokeMethod(tab, "navigate", Q_ARG(QVariant, QStringLiteral("starred:///"))));
+    QTRY_VERIFY(!button->isEnabled());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, centre.toPoint());
+    QTest::qWait(100);
+    QVERIFY(!prompt->property("visible").toBool());
+
+    QVERIFY(QMetaObject::invokeMethod(tab, "navigate", Q_ARG(QVariant, before)));
+    QTRY_COMPARE(tab->property("path").toString(), before);
+}
+
 // GitHub #10: clicking the path bar's empty space types a path — in a folder
 // and in Starred, where the one crumb leaves the bar nearly all empty.
 static void checkPathBarClickEdits(QQuickWindow *window, QQuickItem *tab, const QString &folder)
@@ -737,6 +818,12 @@ void TestQmlViews::selectionAndVirtualDelegates()
     if (QTest::currentTestFailed())
         return;
     checkPathBarClickEdits(qobject_cast<QQuickWindow *>(window), tab, tree.path());
+    if (QTest::currentTestFailed())
+        return;
+    checkNewFolderButton(qobject_cast<QQuickWindow *>(window), tab, tree.path());
+    if (QTest::currentTestFailed())
+        return;
+    checkDisabledMenuItemsDim(qobject_cast<QQuickWindow *>(window), tab, tree.path());
     if (QTest::currentTestFailed())
         return;
     checkMountQuestion(qobject_cast<QQuickWindow *>(window));

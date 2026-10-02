@@ -1,4 +1,5 @@
 #include "Platform.h"
+#include "Applications.h"
 #include "ArchiveEngine.h"
 #include "Location.h"
 
@@ -9,7 +10,6 @@
 #include <QLocale>
 #include <QProcess>
 #include <QStandardPaths>
-#include <QUrl>
 #include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
@@ -189,6 +189,59 @@ bool Platform::openPath(const QString &path) const
     }
     g_clear_error(&error);
     return ok;
+}
+
+namespace {
+
+// Content type of a location via a single synchronous query. Empty when the
+// file cannot be stat'ed or reports no type — the menu then offers nothing.
+QString contentTypeOf(const QString &path, bool *isDir = nullptr)
+{
+    if (isDir)
+        *isDir = false;
+    if (path.isEmpty())
+        return {};
+
+    GFile *file = Location::make(path);
+    GError *error = nullptr;
+    GFileInfo *info = g_file_query_info(file,
+                                        G_FILE_ATTRIBUTE_STANDARD_TYPE ","
+                                        G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+                                        G_FILE_QUERY_INFO_NONE, nullptr, &error);
+    g_clear_error(&error);
+    g_object_unref(file);
+    if (!info)
+        return {};
+
+    // Generic accessors: the typed getters go CRITICAL on a sparse GFileInfo.
+    if (isDir) {
+        *isDir = g_file_info_get_attribute_uint32(info, G_FILE_ATTRIBUTE_STANDARD_TYPE)
+                 == G_FILE_TYPE_DIRECTORY;
+    }
+    QString type;
+    if (const char *content = g_file_info_get_attribute_string(
+            info, G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE))
+        type = QString::fromUtf8(content);
+    g_object_unref(info);
+    return type;
+}
+
+} // namespace
+
+QVariantList Platform::applicationsFor(const QString &path) const
+{
+    bool isDir = false;
+    const QString contentType = contentTypeOf(path, &isDir);
+    if (isDir)
+        return {};
+    return Applications::forType(contentType);
+}
+
+bool Platform::openWith(const QString &applicationId, const QStringList &paths) const
+{
+    if (paths.isEmpty())
+        return false;
+    return Applications::launch(applicationId, contentTypeOf(paths.constFirst()), paths);
 }
 
 bool Platform::openTerminal(const QString &directory) const
