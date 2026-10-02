@@ -29,6 +29,7 @@ private:
     static bool settle(DefaultFileManager &manager);
     QString menuFile() const { return m_home->filePath("config/omarchy/extensions/omarchy-menu.jsonc"); }
     QString bindingsFile() const { return m_home->filePath("config/hypr/bindings.lua"); }
+    QString serviceFile() const { return m_home->filePath("data/dbus-1/services/org.freedesktop.FileManager1.service"); }
 
     std::unique_ptr<QTemporaryDir> m_home;
 };
@@ -78,6 +79,16 @@ void TestSwitcher::init()
         nautilus.write("[Desktop Entry]\nType=Application\nName=Files\nExec=/bin/sh\n"
                        "MimeType=inode/directory;\n");
     }
+    // The D-Bus activation file names the omanta binary; the script looks
+    // beside itself, then on PATH, and a dev checkout has it in neither.
+    {
+        QVERIFY(QDir().mkpath(m_home->filePath("bin")));
+        QFile stub(m_home->filePath("bin/omanta"));
+        QVERIFY(stub.open(QIODevice::WriteOnly));
+        stub.write("#!/bin/sh\n");
+        stub.setPermissions(stub.permissions() | QFileDevice::ExeOwner);
+    }
+    qputenv("PATH", (m_home->filePath("bin") + QLatin1Char(':') + qEnvironmentVariable("PATH")).toUtf8());
     qputenv("XDG_CONFIG_HOME", m_home->filePath("config").toUtf8());
     qputenv("XDG_DATA_HOME", m_home->filePath("data").toUtf8());
     qputenv("XDG_DATA_DIRS", m_home->filePath("data").toUtf8());
@@ -192,12 +203,20 @@ void TestSwitcher::switchesTheDefaultBothWays()
     QVERIFY(bindings.open(QIODevice::ReadOnly));
     QVERIFY(bindings.readAll().contains("omanta-launch"));
     bindings.close();
+    // "Show in folder" with no file manager running activates omanta.
+    QFile service(serviceFile());
+    QVERIFY(service.open(QIODevice::ReadOnly));
+    const QByteArray activation = service.readAll();
+    service.close();
+    QVERIFY(activation.contains("Name=org.freedesktop.FileManager1\n"));
+    QVERIFY(activation.contains(QByteArrayLiteral("Exec=") + m_home->filePath("bin/omanta").toUtf8() + " --service\n"));
 
     manager.setDefault(false);
     QVERIFY(settle(manager));
     QVERIFY(!manager.isDefault());
     QVERIFY(bindings.open(QIODevice::ReadOnly));
     QCOMPARE(bindings.readAll(), original); // restored byte for byte
+    QVERIFY(!QFile::exists(serviceFile())); // Nautilus's own .service applies again
     QVERIFY(status.count() >= 2);
     QVERIFY(manager.lastError().isEmpty());
 }

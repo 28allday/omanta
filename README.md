@@ -112,10 +112,13 @@ Switching makes omanta (or Nautilus) the default everywhere at once:
 archives. It works by flipping the xdg-mime defaults and writing a
 managed, clearly-marked block to `~/.config/hypr/bindings.lua` —
 Omarchy's own files are never modified, no logout needed, and switching
-back restores your configuration byte-for-byte. One note: whichever file
-manager has windows open keeps the "open containing folder" D-Bus
-service until its last window closes, so close the other one's windows
-after switching.
+back restores your configuration byte-for-byte. It also drops a user-level
+D-Bus `.service` file for `org.freedesktop.FileManager1`, so "show in
+folder" from a browser starts omanta (with `--service`, no extra window)
+instead of activating Nautilus when neither is running. One note:
+whichever file manager has windows open keeps that name until its last
+window closes, so close the other one's windows after switching; omanta
+takes the name over on its own once Nautilus exits.
 
 ## Uninstall
 
