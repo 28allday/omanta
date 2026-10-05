@@ -244,6 +244,49 @@ bool Platform::openWith(const QString &applicationId, const QStringList &paths) 
     return Applications::launch(applicationId, contentTypeOf(paths.constFirst()), paths);
 }
 
+namespace {
+
+// Runs a short helper and reports whether it exited cleanly, capturing its
+// standard output. Bounded so a wedged helper can't hang the menu.
+bool runQuick(const QString &program, const QStringList &arguments, QString *output = nullptr)
+{
+    QProcess process;
+    process.start(program, arguments);
+    if (!process.waitForFinished(2000)) {
+        process.kill();
+        process.waitForFinished();
+        return false;
+    }
+    if (output)
+        *output = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+    return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+}
+
+// Ghostty runs single-instance under Omarchy, and a plain launch is handed to
+// the running process, which drops --working-directory and inherits the
+// focused window's folder instead. Its +new-window IPC does carry the folder.
+// False when Ghostty isn't the terminal or no instance is running — the
+// ordinary launch then starts a fresh process, which honours the folder.
+bool openGhosttyWindow(const QString &launcher, const QString &directory)
+{
+    const QString name = QFileInfo(launcher).fileName();
+    if (name == QLatin1String("xdg-terminal-exec")) {
+        QString id;
+        if (!runQuick(launcher, {QStringLiteral("--print-id")}, &id)
+            || !id.startsWith(QLatin1String("com.mitchellh.ghostty")))
+            return false;
+    } else if (name != QLatin1String("ghostty")) {
+        return false;
+    }
+
+    const QString ghostty = QStandardPaths::findExecutable(QStringLiteral("ghostty"));
+    return !ghostty.isEmpty()
+        && runQuick(ghostty, {QStringLiteral("+new-window"),
+                              QStringLiteral("--working-directory=") + directory});
+}
+
+} // namespace
+
 bool Platform::openTerminal(const QString &directory) const
 {
     if (!Location::isLocal(directory))
@@ -251,7 +294,7 @@ bool Platform::openTerminal(const QString &directory) const
 
     // Ordered by how specific the user's intent is: an explicit $TERMINAL wins,
     // then the freedesktop-blessed launcher, then the Debian-style alternative.
-    // Nothing here names a particular terminal emulator.
+    // Only Ghostty is named, and only to work around its single-instance mode.
     QStringList candidates;
     if (const QString configured = qEnvironmentVariable("TERMINAL"); !configured.isEmpty())
         candidates << configured;
@@ -262,7 +305,16 @@ bool Platform::openTerminal(const QString &directory) const
         const QString program = QStandardPaths::findExecutable(candidate);
         if (program.isEmpty())
             continue;
-        if (QProcess::startDetached(program, {}, directory))
+        if (openGhosttyWindow(program, directory))
+            return true;
+        // The working directory alone is not enough for terminals that hand
+        // the window to an already-running process, which ignores ours.
+        // xdg-terminal-exec knows each terminal's own directory flag, so name
+        // the place there too.
+        QStringList arguments;
+        if (QFileInfo(program).fileName() == QLatin1String("xdg-terminal-exec"))
+            arguments << QStringLiteral("--dir=") + directory;
+        if (QProcess::startDetached(program, arguments, directory))
             return true;
     }
 
