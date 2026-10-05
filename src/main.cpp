@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
     app.setApplicationDisplayName(QStringLiteral("Files"));
     app.setOrganizationDomain(QStringLiteral("omarchy.org"));
     app.setDesktopFileName(QStringLiteral("omanta"));
-    app.setApplicationVersion(QStringLiteral("0.1.23"));
+    app.setApplicationVersion(QStringLiteral("0.1.24"));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Browse files."));

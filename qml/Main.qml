@@ -1147,6 +1147,21 @@ Window {
         extractPicker.askFor(currentTab.path, qsTr("Extract %1 to:").arg(what));
     }
 
+    // "Move to…" / "Copy to…" — a paste whose destination is picked first,
+    // through the same clash check as paste and drops.
+    function transferSelectedTo(isMove) {
+        const paths = selection();
+        if (paths.length === 0 || !currentTab)
+            return;
+        transferPicker.pendingPaths = paths;
+        transferPicker.isMove = isMove;
+        const what = paths.length === 1
+            ? "\u201c" + Platform.baseName(paths[0]) + "\u201d"
+            : qsTr("%1 items").arg(paths.length);
+        transferPicker.askFor(currentTab.path,
+            (isMove ? qsTr("Move %1 to:") : qsTr("Copy %1 to:")).arg(what));
+    }
+
     function trashSelected() {
         if (viewingTrash) {
             deleteSelected();
@@ -1276,6 +1291,17 @@ Window {
 
         acceptLabel: qsTr("Extract")
         onPicked: path => FileOperations.extractHere(pendingArchives, path)
+        onClosed: root.returnFocusToView()
+    }
+
+    FolderPickerDialog {
+        id: transferPicker
+
+        property var pendingPaths: []
+        property bool isMove: false
+
+        acceptLabel: isMove ? qsTr("Move Here") : qsTr("Copy Here")
+        onPicked: path => root.startTransfer(pendingPaths, path, isMove, false)
         onClosed: root.returnFocusToView()
     }
 
@@ -1929,6 +1955,18 @@ Window {
             text: qsTr("Paste")
             enabled: Clipboard.hasFiles && root.viewWritable
             onTriggered: root.paste()
+        }
+
+        MenuItem {
+            text: qsTr("Move to…")
+            enabled: root.currentTab && root.currentTab.selectionCount > 0
+            onTriggered: root.transferSelectedTo(true)
+        }
+
+        MenuItem {
+            text: qsTr("Copy to…")
+            enabled: root.currentTab && root.currentTab.selectionCount > 0
+            onTriggered: root.transferSelectedTo(false)
         }
 
         MenuItem {

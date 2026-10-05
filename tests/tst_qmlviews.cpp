@@ -15,6 +15,7 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QGuiApplication>
+#include <QPointer>
 #include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
@@ -92,6 +93,7 @@ private Q_SLOTS:
     void selectionAndVirtualDelegates();
     void emptyTrashRefreshesOpenViews();
     void pasteKeepsCopiedFilesOnClipboard();
+    void moveAndCopyToPickedFolder();
     void thumbnailsFollowInPlaceEdits();
     void dragPreviewSurvivesItsOwner();
     void spacePreviewsInSushi();
@@ -1046,6 +1048,84 @@ void TestQmlViews::pasteKeepsCopiedFilesOnClipboard()
     QVERIFY(!clipboard->isCutPath(cut));
 }
 
+// "Move to…" / "Copy to…": the picked folder feeds the same
+// transfer flow as paste, clash check included.
+void TestQmlViews::moveAndCopyToPickedFolder()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    const QString moved = tree.writeFile("source/moved.txt");
+    const QString copied = tree.writeFile("source/copied.txt");
+    const QString target = tree.filePath("target");
+    QVERIFY(QDir().mkpath(target));
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.filePath("source"));
+    QObject *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = child;
+            break;
+        }
+    }
+    QVERIFY(window);
+    auto *operations = engine.singletonInstance<QObject *>("Omanta", "FileOperations");
+    QVERIFY(operations);
+    auto *tab = qobject_cast<QQuickItem *>(window->property("currentTab").value<QObject *>());
+    QVERIFY(tab);
+    QTRY_VERIFY(findFileRow(tab, moved));
+    QTRY_VERIFY(findFileRow(tab, copied));
+
+    QObject *picker = nullptr;
+    const auto pickerLabelled = [&](const QString &label) {
+        for (QObject *child : window->findChildren<QObject *>()) {
+            if (child->property("acceptLabel").toString() == label)
+                return child;
+        }
+        return static_cast<QObject *>(nullptr);
+    };
+    const auto pick = [&](const QString &name, bool isMove) {
+        QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, name)));
+        QVERIFY(QMetaObject::invokeMethod(window, "transferSelectedTo", Q_ARG(QVariant, isMove)));
+        QTRY_VERIFY((picker = pickerLabelled(isMove ? QStringLiteral("Move Here")
+                                                    : QStringLiteral("Copy Here"))));
+        QTRY_VERIFY(picker->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(picker, "picked", Q_ARG(QString, target)));
+    };
+
+    pick(QStringLiteral("moved.txt"), true);
+    QTRY_VERIFY(QFileInfo::exists(tree.filePath("target/moved.txt")));
+    QTRY_VERIFY(!operations->property("busy").toBool());
+    QVERIFY(!QFileInfo::exists(moved));
+
+    pick(QStringLiteral("copied.txt"), false);
+    QTRY_VERIFY(QFileInfo::exists(tree.filePath("target/copied.txt")));
+    QTRY_VERIFY(!operations->property("busy").toBool());
+    QVERIFY(QFileInfo::exists(copied));
+
+    // Copying it again clashes, so it waits on the conflict dialog like a
+    // paste would; Keep both lands a second copy.
+    pick(QStringLiteral("copied.txt"), false);
+    QTRY_VERIFY(window->property("pendingTransfer").value<QJSValue>().isObject());
+    QVERIFY(QMetaObject::invokeMethod(window, "performTransfer",
+                                      Q_ARG(QVariant, int(FileOperations::RenameNew))));
+    QTRY_COMPARE(QDir(target).entryList(QDir::Files).size(), 3);
+    QTRY_VERIFY(!operations->property("busy").toBool());
+}
+
 void TestQmlViews::thumbnailsFollowInPlaceEdits()
 {
     QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
@@ -1377,6 +1457,9 @@ void TestQmlViews::tabCloseButtonClosesTab()
     QTRY_COMPARE(window->property("tabCount").toInt(), 2);
     QList<QQuickItem *> tabs;
     QTRY_COMPARE((tabs = tabDelegates(window->contentItem())).size(), 2);
+    // The strip's Row lays a new tab out a frame later; a click point taken
+    // before then can land on the other tab.
+    QTRY_VERIFY(tabs.at(0)->x() < tabs.at(1)->x());
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
                       centreOf(findItem(tabs.at(0), "text", QStringLiteral("×"))));
     QTRY_COMPARE(window->property("tabCount").toInt(), 1);
@@ -1387,14 +1470,16 @@ void TestQmlViews::tabCloseButtonClosesTab()
     QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier);
     QTRY_COMPARE(window->property("tabCount").toInt(), 2);
     QTRY_COMPARE((tabs = tabDelegates(window->contentItem())).size(), 2);
-    auto *second = window->property("currentTab").value<QObject *>();
+    QTRY_VERIFY(tabs.at(0)->x() < tabs.at(1)->x());
+    const QPointer<QObject> second = window->property("currentTab").value<QObject *>();
     const QPoint label = tabs.at(0)->mapToScene(QPointF(20, tabs.at(0)->height() / 2)).toPoint();
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, label);
-    QTRY_VERIFY(window->property("currentTab").value<QObject *>() != second);
+    QTRY_VERIFY(window->property("currentTab").value<QObject *>() != second.data());
     QCOMPARE(window->property("tabCount").toInt(), 2);
     QTest::mouseClick(window, Qt::MiddleButton, Qt::NoModifier, label);
     QTRY_COMPARE(window->property("tabCount").toInt(), 1);
-    QCOMPARE(window->property("currentTab").value<QObject *>(), second);
+    QVERIFY(second);
+    QCOMPARE(window->property("currentTab").value<QObject *>(), second.data());
 }
 
 // The tab strip's labels, in tab order. A strip delegate is the item with

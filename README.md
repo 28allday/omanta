@@ -40,6 +40,8 @@ Omarchy theme.
   installed. Arrow keys step through the folder; Space or Escape closes it
 - Open With: right-click a file to open it in any app registered for its
   type, or "Other Application…" to choose one and set the default
+- Move to… and Copy to… in the right-click menu: pick a destination folder
+  and the selection goes there, with the same name-clash dialog as paste
 - New Folder from the + button beside search, Ctrl+Shift+N, or right-click
 - Search: recursive filename plus full-text (via `localsearch`), date and
   type filters
@@ -63,8 +65,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.23/omanta-0.1.23-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.23-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.24/omanta-0.1.24-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.24-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —
