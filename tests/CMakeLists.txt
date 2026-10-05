@@ -150,6 +150,11 @@ set_tests_properties(tst_qmlviews PROPERTIES TIMEOUT 60
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 add_test(NAME tst_dropbox_helper COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tst_dropbox_helper.sh
     ${CMAKE_SOURCE_DIR}/packaging/bin/omanta-dropbox-link)
+# The example action's script; skipped (77) where ffmpeg is not installed.
+add_test(NAME example_resolve_audio COMMAND sh
+    ${CMAKE_SOURCE_DIR}/examples/actions/resolve-audio/test.sh
+    ${CMAKE_SOURCE_DIR}/examples/actions/resolve-audio/omanta-resolve-audio)
+set_tests_properties(example_resolve_audio PROPERTIES SKIP_RETURN_CODE 77)
 
 # Drives the real packaging/bin/omanta-switch inside a throwaway XDG home.
 omanta_test(tst_switcher

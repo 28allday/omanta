@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -27,6 +28,9 @@ private Q_SLOTS:
     void terminalActionsWrapIntoOneShellCommand();
     void userDirOverridesById();
     void reloadsWhenTheDirChanges();
+    void optionReachesTheCommandAsEnv();
+    void malformedOptionIsDropped();
+    void installedActionsListOptionsForPreferences();
 
 private:
     void writeAction(const QString &name, const QString &body);
@@ -301,6 +305,68 @@ void TestUserActions::reloadsWhenTheDirChanges()
     for (const QVariant &entry : list)
         labels.append(entry.toMap().value("label").toString());
     QVERIFY(labels.contains(QStringLiteral("Late Arrival")));
+}
+
+void TestUserActions::optionReachesTheCommandAsEnv()
+{
+    const QString tool = touchExecutable("opt-tool");
+    writeAction("opt.toml",
+                "name = \"Opt\"\ncommand = \"opt-tool %f\"\n"
+                "requires = [\"opt-tool\"]\neach = true\n"
+                "option = \"codec\"\noption_label = \"Codec\"\n"
+                "option_choices = [\"pcm16=PCM 16-bit\", \"mp3=MP3\"]\n");
+    UserActions actions;
+    const QString env = QStandardPaths::findExecutable(QStringLiteral("env"));
+    QVERIFY(!env.isEmpty());
+
+    QCOMPARE(actions.invocationsFor(QStringLiteral("opt"), { m_video }, QStringLiteral("mp3")),
+             QList<QStringList>({ { env, QStringLiteral("OMANTA_OPTION_CODEC=mp3"), tool, m_video } }));
+    // No choice yet, or one the action no longer offers: the first is the default.
+    for (const QString &stale : { QString(), QStringLiteral("flac") }) {
+        QCOMPARE(actions.invocationsFor(QStringLiteral("opt"), { m_video }, stale),
+                 QList<QStringList>({ { env, QStringLiteral("OMANTA_OPTION_CODEC=pcm16"), tool, m_video } }));
+    }
+}
+
+void TestUserActions::malformedOptionIsDropped()
+{
+    const QString tool = touchExecutable("bad-opt-tool");
+    writeAction("badopt.toml",
+                "name = \"Bad Opt\"\ncommand = \"bad-opt-tool %F\"\n"
+                "requires = [\"bad-opt-tool\"]\n"
+                "option = \"not a name\"\noption_choices = [\"a\", \"b\"]\n");
+    UserActions actions;
+
+    QCOMPARE(actions.invocationsFor(QStringLiteral("badopt"), { m_text }, QStringLiteral("a")),
+             QList<QStringList>({ { tool, m_text } }));
+}
+
+void TestUserActions::installedActionsListOptionsForPreferences()
+{
+    touchExecutable("listed-tool");
+    writeAction("listed.toml",
+                "name = \"Listed\"\ncommand = \"listed-tool %F\"\n"
+                "requires = [\"listed-tool\"]\n"
+                "option = \"mode\"\noption_label = \"Mode\"\n"
+                "option_choices = [\"fast=Fast\", \"slow\"]\n");
+    writeAction("unlisted.toml",
+                "name = \"Unlisted\"\ncommand = \"no-such-tool-xyz %F\"\n"
+                "requires = [\"no-such-tool-xyz\"]\n");
+    UserActions actions;
+
+    QVariantMap listed;
+    for (const QVariant &entry : actions.installedActions()) {
+        const QVariantMap map = entry.toMap();
+        QVERIFY2(map.value("id") != QStringLiteral("unlisted"),
+                 "an action that cannot run has no settings to show");
+        if (map.value("id") == QStringLiteral("listed"))
+            listed = map;
+    }
+    QCOMPARE(listed.value("name").toString(), QStringLiteral("Listed"));
+    QCOMPARE(listed.value("optionLabel").toString(), QStringLiteral("Mode"));
+    QCOMPARE(listed.value("optionValues").toStringList(), QStringList({ "fast", "slow" }));
+    QCOMPARE(listed.value("optionLabels").toStringList(), QStringList({ "Fast", "slow" }));
+    QCOMPARE(listed.value("optionDefault").toString(), QStringLiteral("fast"));
 }
 
 QTEST_GUILESS_MAIN(TestUserActions)
