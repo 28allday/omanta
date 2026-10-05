@@ -16,8 +16,7 @@ ToolbarButton {
     anchors.right: parent ? parent.right : undefined
     anchors.margins: 6
     z: 10
-    symbol: "✕"
-    symbolSize: 13
+    glyph: "toolbar-close"
     tip: qsTr("Close")
     onTriggered: dialog.close()
 }

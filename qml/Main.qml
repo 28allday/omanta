@@ -240,7 +240,7 @@ Window {
                     }
 
                     ToolbarButton {
-                        symbol: "⌕"
+                        glyph: "toolbar-search"
                         tip: "Search (Ctrl+F)"
                         active: root.searchOpen
                         onTriggered: root.searchOpen ? root.closeSearch() : root.openSearch()
@@ -273,21 +273,21 @@ Window {
 
                     ToolbarButton {
                         id: menuButton
-                        symbol: "≡"
+                        glyph: "toolbar-menu"
                         tip: "Main menu"
                         onTriggered: mainMenu.popup(menuButton, 0, menuButton.height)
                     }
                 }
 
                 ToolbarButton {
-                    symbol: "←"
+                    glyph: "toolbar-back"
                     tip: "Back (Alt+Left)"
                     enabled: root.currentTab && root.currentTab.history.canGoBack
                     onTriggered: root.currentTab.goBack()
                 }
 
                 ToolbarButton {
-                    symbol: "→"
+                    glyph: "toolbar-forward"
                     tip: "Forward (Alt+Right)"
                     enabled: root.currentTab && root.currentTab.history.canGoForward
                     onTriggered: root.currentTab.goForward()
@@ -331,11 +331,10 @@ Window {
                         anchors.rightMargin: 6
                         spacing: 6
 
-                        Text {
-                            textFormat: Text.PlainText
-                            text: "⌕"
-                            color: Colors.textDim
-                            font.pixelSize: 15
+                        Glyph {
+                            name: "search"
+                            tint: Colors.textDim
+                            size: 16
                         }
 
                         TextField {
@@ -544,8 +543,7 @@ Window {
                 ToolbarButton {
                     // Shows the view you'd switch TO: four squares for grid,
                     // lines for list. "▦" was a crosshatch mess at 15px.
-                    glyph: root.currentTab && root.currentTab.viewMode === "list" ? "view-grid" : ""
-                    symbol: "☰"
+                    glyph: root.currentTab && root.currentTab.viewMode === "list" ? "view-grid" : "view-list"
                     tip: "Switch view (Ctrl+1 / Ctrl+2)"
                     onTriggered: {
                         if (root.currentTab)
@@ -555,15 +553,13 @@ Window {
 
                 ToolbarButton {
                     id: viewOptionsButton
-                    symbol: "▼"
-                    symbolSize: 12
+                    glyph: "toolbar-dropdown"
                     tip: "View options"
                     onTriggered: viewOptionsMenu.popup(viewOptionsButton, 0, viewOptionsButton.height)
                 }
 
                 ToolbarButton {
-                    symbol: "✕"
-                    symbolSize: 13
+                    glyph: "toolbar-close"
                     tip: "Close window (Ctrl+Shift+W)"
                     onTriggered: root.close()
                 }
@@ -609,8 +605,7 @@ Window {
                             elide: Text.ElideRight
                         }
 
-                        Text {
-                            textFormat: Text.PlainText
+                        Glyph {
                             id: closeButton
                             // Above tabMouse, which fills the tab and is
                             // declared later — otherwise it takes the click
@@ -620,9 +615,8 @@ Window {
                             anchors.right: parent.right
                             anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "×"
-                            color: closeMouse.containsMouse ? Colors.text : Colors.textDim
-                            font.pixelSize: 14
+                            name: "close"
+                            tint: closeMouse.containsMouse ? Colors.text : Colors.textDim
 
                             MouseArea {
                                 id: closeMouse
@@ -808,7 +802,7 @@ Window {
                 ToolbarButton {
                     id: protocolsButton
 
-                    symbol: "ⓘ"
+                    glyph: "toolbar-info"
                     tip: "Available protocols"
                     onTriggered: protocolsPopover.opened ? protocolsPopover.close()
                                                         : protocolsPopover.open()
@@ -1573,14 +1567,14 @@ Window {
                 }
 
                 ToolbarButton {
-                    symbol: "−"
+                    glyph: "toolbar-minus"
                     tip: "Zoom out (Ctrl+-)"
                     enabled: root.currentTab && root.currentTab.zoom > root.currentTab.minimumZoom
                     onTriggered: root.currentTab.zoomOut()
                 }
 
                 ToolbarButton {
-                    symbol: "+"
+                    glyph: "toolbar-plus"
                     tip: "Zoom in (Ctrl++)"
                     enabled: root.currentTab && root.currentTab.zoom < root.currentTab.maximumZoom
                     onTriggered: root.currentTab.zoomIn()

@@ -49,7 +49,10 @@ Item {
         visible: root.glyph !== ""
         width: 16
         height: 16
-        sourceSize: Qt.size(32, 32)
+        // The provider already receives physical pixels (sourceSize is
+        // scaled by the screen's ratio), so ask for exactly the shown size —
+        // 32 here was drawn at 2x and shrunk, softening every edge.
+        sourceSize: Qt.size(16, 16)
         source: root.glyph === "" ? ""
               : Colors.tint("image://fileicon/" + root.glyph,
                             root.active ? Colors.selectionText

@@ -53,6 +53,44 @@ const Glyph kGlyphs[] = {
       R"(<path stroke="%C%" stroke-width="1.7" fill="none" d="M12 6.4 6.4 17.6 M12 6.4 17.6 17.6 M6.4 17.6 h11.2"/><path fill="%C%" d="M12 3.9 a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5 z M6.4 15.1 a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5 z M17.6 15.1 a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5 z"/>)" },
     { "grid",
       R"(<rect fill="%C%" x="4.6" y="4.6" width="6.5" height="6.5" rx="1.4"/><rect fill="%C%" x="12.9" y="4.6" width="6.5" height="6.5" rx="1.4"/><rect fill="%C%" x="4.6" y="12.9" width="6.5" height="6.5" rx="1.4"/><rect fill="%C%" x="12.9" y="12.9" width="6.5" height="6.5" rx="1.4"/>)" },
+    // Toolbar marks, replacing Unicode symbols whose font glyphs snap to
+    // the pixel grid unevenly. Drawn on the 16px toolbar grid (1px = 1.5
+    // units), so edges land on whole pixels at the size they're shown.
+    { "search",
+      R"(<circle cx="9.75" cy="9.75" r="6" stroke="%C%" stroke-width="2.25" fill="none"/><path stroke="%C%" stroke-width="3" stroke-linecap="round" d="M14.6 14.6 L20.25 20.25"/>)" },
+    { "menu",
+      R"(<rect fill="%C%" x="3" y="4.5" width="18" height="3" rx="1.5"/><rect fill="%C%" x="3" y="10.5" width="18" height="3" rx="1.5"/><rect fill="%C%" x="3" y="16.5" width="18" height="3" rx="1.5"/>)" },
+    { "list",
+      R"(<rect fill="%C%" x="3" y="4.5" width="3" height="3" rx="1"/><rect fill="%C%" x="9" y="4.5" width="12" height="3" rx="1.5"/><rect fill="%C%" x="3" y="10.5" width="3" height="3" rx="1"/><rect fill="%C%" x="9" y="10.5" width="12" height="3" rx="1.5"/><rect fill="%C%" x="3" y="16.5" width="3" height="3" rx="1"/><rect fill="%C%" x="9" y="16.5" width="12" height="3" rx="1.5"/>)" },
+    { "back",
+      R"(<path stroke="%C%" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M19.5 12 H4.5 M10.5 6 L4.5 12 L10.5 18"/>)" },
+    { "forward",
+      R"(<path stroke="%C%" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M4.5 12 H19.5 M13.5 6 L19.5 12 L13.5 18"/>)" },
+    { "dropdown",
+      R"(<path fill="%C%" stroke="%C%" stroke-width="1.5" stroke-linejoin="round" d="M6 9 H18 L12 16.5 z"/>)" },
+    { "eject",
+      R"(<path fill="%C%" stroke="%C%" stroke-width="1.5" stroke-linejoin="round" d="M12 4.5 L19.5 13.5 H4.5 z"/><rect fill="%C%" x="4.5" y="16.5" width="15" height="3"/>)" },
+    { "up",
+      R"(<path stroke="%C%" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M12 19.5 V4.5 M6 10.5 L12 4.5 L18 10.5"/>)" },
+    { "down",
+      R"(<path stroke="%C%" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M12 4.5 V19.5 M6 13.5 L12 19.5 L18 13.5"/>)" },
+    { "plus",
+      R"(<path stroke="%C%" stroke-width="2.25" stroke-linecap="round" d="M12 4.5 V19.5 M4.5 12 H19.5"/>)" },
+    { "minus",
+      R"(<path stroke="%C%" stroke-width="2.25" stroke-linecap="round" d="M4.5 12 H19.5"/>)" },
+    { "info",
+      R"(<path fill="%C%" fill-rule="evenodd" d="M12 3 a9 9 0 1 1 0 18 9 9 0 0 1 0-18 z M12 4.9 a7.1 7.1 0 1 0 0 14.2 7.1 7.1 0 0 0 0-14.2 z"/><rect fill="%C%" x="10.9" y="10.5" width="2.2" height="6"/><circle fill="%C%" cx="12" cy="7.9" r="1.3"/>)" },
+    // 12px variants for inline marks (tab close, eject, cancel, the rename
+    // arrow): on the 12px grid (1px = 2 units), so straight edges land on
+    // whole pixels instead of the 16px set's 2/3-pixel blur.
+    { "close-small",
+      R"(<path stroke="%C%" stroke-width="3" stroke-linecap="round" d="M6 6 L18 18 M18 6 L6 18"/>)" },
+    { "eject-small",
+      R"(<path fill="%C%" d="M12 4 L20 14 H4 z"/><rect fill="%C%" x="4" y="16" width="16" height="4"/>)" },
+    { "forward-small",
+      R"(<rect fill="%C%" x="4" y="12" width="15" height="2"/><path stroke="%C%" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M14 7 L20 13 L14 19"/>)" },
+    { "close",
+      R"(<path stroke="%C%" stroke-width="2.25" stroke-linecap="round" d="M6 6 L18 18 M18 6 L6 18"/>)" },
     { "sidebar",
       R"(<path fill="%C%" fill-rule="evenodd" d="M4 6 a2 2 0 0 1 2-2 h12 a2 2 0 0 1 2 2 v12 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2-2 z M10.5 5.8 v12.4 H18 a.2 .2 0 0 0 .2-.2 V6 a.2 .2 0 0 0 -.2-.2 z"/>)" },
     { "bookmark",
@@ -138,6 +176,13 @@ QString glyphForName(QString name)
     // The app's own chrome (not a GIO name): the view-switch button.
     if (name == QLatin1String("view-grid")) return QStringLiteral("grid");
     if (name == QLatin1String("view-sidebar")) return QStringLiteral("sidebar");
+    if (name == QLatin1String("view-list")) return QStringLiteral("list");
+    for (const char *mark : {"search", "menu", "back", "forward", "dropdown", "close", "eject",
+                             "up", "down", "plus", "minus", "info",
+                             "close-small", "eject-small", "forward-small"}) {
+        if (name == QLatin1String("toolbar-") + QLatin1String(mark))
+            return QLatin1String(mark);
+    }
 
     // The sidebar's specials and everything folder-ish.
     if (name == QLatin1String("user-home")) return QStringLiteral("home");

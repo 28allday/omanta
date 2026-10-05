@@ -160,17 +160,15 @@ Rectangle {
                 elide: Text.ElideRight
             }
 
-            Text {
-                textFormat: Text.PlainText
+            Glyph {
                 id: ejectButton
 
                 anchors.right: parent.right
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 visible: row.ejectable
-                text: "⏏"
-                color: ejectMouse.containsMouse ? Colors.accent : Colors.textDim
-                font.pixelSize: 12
+                name: "eject"
+                tint: ejectMouse.containsMouse ? Colors.accent : Colors.textDim
 
                 MouseArea {
                     id: ejectMouse
@@ -402,12 +400,10 @@ Rectangle {
 
                             // Per-operation cancel: interrupts the
                             // running one, drops a queued one.
-                            Text {
-                                textFormat: Text.PlainText
-                                text: "✕"
-                                color: cancelOneMouse.containsMouse
-                                       ? Colors.text : Colors.textDim
-                                font.pixelSize: 12
+                            Glyph {
+                                name: "close"
+                                tint: cancelOneMouse.containsMouse
+                                      ? Colors.text : Colors.textDim
 
                                 MouseArea {
                                     id: cancelOneMouse
