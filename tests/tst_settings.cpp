@@ -66,6 +66,7 @@ void TestSettings::defaultsAreNautilus()
     QCOMPARE(settings.defaultViewMode(), QStringLiteral("icon"));
     QCOMPARE(settings.showHiddenFiles(), false);
     QCOMPARE(settings.showSidebar(), true);
+    QCOMPARE(settings.hiddenActions(), QStringList());
 }
 
 void TestSettings::settersPersistAcrossInstances()
@@ -77,6 +78,8 @@ void TestSettings::settersPersistAcrossInstances()
         settings.setDateTimeFormat(QStringLiteral("detailed"));
         settings.setShowHiddenFiles(true);
         settings.setShowSidebar(false);
+        settings.setActionOption(QStringLiteral("resolve-audio"), QStringLiteral("alac"));
+        settings.setHiddenActions({ QStringLiteral("resolve-audio"), QStringLiteral("transcode") });
     }
 
     Settings reread;
@@ -85,6 +88,10 @@ void TestSettings::settersPersistAcrossInstances()
     QCOMPARE(reread.dateTimeFormat(), QStringLiteral("detailed"));
     QCOMPARE(reread.showHiddenFiles(), true);
     QCOMPARE(reread.showSidebar(), false);
+    QCOMPARE(reread.actionOption(QStringLiteral("resolve-audio")), QStringLiteral("alac"));
+    QCOMPARE(reread.actionOption(QStringLiteral("transcode")), QString());
+    QCOMPARE(reread.hiddenActions(),
+             QStringList({ QStringLiteral("resolve-audio"), QStringLiteral("transcode") }));
     // Untouched keys still answer their defaults.
     QCOMPARE(reread.showThumbnails(), QStringLiteral("local-only"));
 }

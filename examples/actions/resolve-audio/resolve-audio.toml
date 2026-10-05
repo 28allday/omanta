@@ -1,0 +1,21 @@
+# Example omanta action: DaVinci Resolve on Linux (Studio too) imports
+# AAC-audio clips silent. Writes <name>.resolve.mov beside each video: the
+# video copied untouched, the audio re-encoded in the codec picked below.
+#
+# Install: copy this file to ~/.config/omanta/actions/ and the script
+# omanta-resolve-audio to a folder on your PATH (e.g. ~/.local/bin).
+name = "Convert Audio for Resolve"
+plural = "Convert Audio for Resolve (%n videos)"
+command = "omanta-resolve-audio %f"
+each = true
+terminal = true
+requires = ["omanta-resolve-audio", "ffmpeg", "ffprobe"]
+mimetypes = ["video/*"]
+extensions = [".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi"]
+directories = false
+
+# Shown as a dropdown in Preferences → Custom Actions; the script receives
+# the value as OMANTA_OPTION_CODEC. The first choice is the default.
+option = "codec"
+option_label = "Audio Codec"
+option_choices = ["pcm16=PCM 16-bit", "pcm24=PCM 24-bit", "alac=ALAC (lossless)", "mp3=MP3 320 kbps"]

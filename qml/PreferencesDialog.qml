@@ -74,6 +74,8 @@ Dialog {
         captionSecond.currentIndex = captionIndex(captions[1]);
         captionThird.currentIndex = captionIndex(captions[2]);
         opacitySlider.value = Settings.backgroundOpacity;
+        // Reassigning rebuilds the rows, which read their state as they are made.
+        customActions = UserActions.installedActions();
         syncFileManager();
     }
 
@@ -103,6 +105,15 @@ Dialog {
         Settings.iconCaptions = [captionValues[captionFirst.currentIndex],
                                  captionValues[captionSecond.currentIndex],
                                  captionValues[captionThird.currentIndex]];
+    }
+
+    // The TOML actions installed and runnable here, sampled on show.
+    property var customActions: []
+    function setActionShown(id, shown) {
+        const hidden = Settings.hiddenActions.filter(other => other !== id);
+        if (!shown)
+            hidden.push(id);
+        Settings.hiddenActions = hidden;
     }
 
     // The three-way performance policies share one value order.
@@ -281,6 +292,50 @@ Dialog {
                 PrefSwitch {
                     id: deletePermanentlySwitch
                     onToggled: Settings.showDeletePermanently = checked
+                }
+            }
+
+            SectionTitle {
+                visible: root.customActions.length > 0
+                text: qsTr("Custom Actions")
+            }
+            SectionCaption {
+                visible: root.customActions.length > 0
+                text: qsTr("Actions added from ~/.config/omanta/actions. Switch one off to hide it from the menus.")
+            }
+
+            Repeater {
+                model: root.customActions
+
+                // One card per action: its switch, then its option if it has one.
+                delegate: Column {
+                    id: actionCard
+                    required property var modelData
+                    readonly property bool hasOption: modelData.optionValues.length > 0
+                    width: parent.width
+                    spacing: 8
+
+                    PrefRow {
+                        label: actionCard.modelData.name
+                        PrefSwitch {
+                            id: shownSwitch
+                            checked: !Settings.hiddenActions.includes(actionCard.modelData.id)
+                            onToggled: root.setActionShown(actionCard.modelData.id, checked)
+                        }
+                    }
+
+                    PrefRow {
+                        visible: actionCard.hasOption
+                        label: actionCard.modelData.optionLabel
+                        PrefComboBox {
+                            enabled: shownSwitch.checked
+                            model: actionCard.modelData.optionLabels
+                            currentIndex: Math.max(0, actionCard.modelData.optionValues.indexOf(
+                                              Settings.actionOption(actionCard.modelData.id)))
+                            onActivated: Settings.setActionOption(actionCard.modelData.id,
+                                                                  actionCard.modelData.optionValues[currentIndex])
+                        }
+                    }
                 }
             }
 

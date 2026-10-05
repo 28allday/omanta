@@ -1,10 +1,13 @@
 #include "UserActions.h"
 #include "Location.h"
 
+#include <algorithm>
+
 #include <QDir>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QVariantMap>
 
@@ -149,7 +152,33 @@ void UserActions::reload()
                     action.directories = value != QLatin1String("false");
                 else if (key == QLatin1String("under"))
                     action.under = parseArray(value);
+                else if (key == QLatin1String("option"))
+                    action.option = unquote(value);
+                else if (key == QLatin1String("option_label"))
+                    action.optionLabel = unquote(value);
+                else if (key == QLatin1String("option_choices")) {
+                    for (const QString &choice : parseArray(value)) {
+                        const qsizetype split = choice.indexOf(QLatin1Char('='));
+                        const QString optionValue = (split < 0 ? choice : choice.left(split)).trimmed();
+                        if (optionValue.isEmpty())
+                            continue;
+                        action.optionValues.append(optionValue);
+                        action.optionLabels.append(split < 0 ? optionValue
+                                                             : choice.mid(split + 1).trimmed());
+                    }
+                }
             }
+
+            // The option becomes an environment variable name, so it is held
+            // to [A-Za-z0-9_]; a malformed one drops the option, not the action.
+            static const QRegularExpression envName(QStringLiteral("^[A-Za-z_][A-Za-z0-9_]*$"));
+            if (!envName.match(action.option).hasMatch() || action.optionValues.isEmpty()) {
+                action.option.clear();
+                action.optionValues.clear();
+                action.optionLabels.clear();
+            }
+            if (action.optionLabel.isEmpty())
+                action.optionLabel = action.option;
 
             if (!action.name.isEmpty() && !action.command.isEmpty())
                 byId.insert(action.id, action);
@@ -268,8 +297,34 @@ QVariantList UserActions::actionsFor(const QStringList &paths) const
     return result;
 }
 
+QVariantList UserActions::installedActions() const
+{
+    QList<const Action *> sorted;
+    for (const Action &action : m_actions) {
+        if (available(action))
+            sorted.append(&action);
+    }
+    std::sort(sorted.begin(), sorted.end(), [](const Action *a, const Action *b) {
+        return a->name.localeAwareCompare(b->name) < 0;
+    });
+
+    QVariantList result;
+    for (const Action *action : std::as_const(sorted)) {
+        result.append(QVariantMap{
+            { QStringLiteral("id"), action->id },
+            { QStringLiteral("name"), action->name },
+            { QStringLiteral("optionLabel"), action->option.isEmpty() ? QString() : action->optionLabel },
+            { QStringLiteral("optionValues"), action->optionValues },
+            { QStringLiteral("optionLabels"), action->optionLabels },
+            { QStringLiteral("optionDefault"), action->optionValues.value(0) },
+        });
+    }
+    return result;
+}
+
 QList<QStringList> UserActions::invocationsFor(const QString &id,
-                                               const QStringList &paths) const
+                                               const QStringList &paths,
+                                               const QString &optionValue) const
 {
     for (const Action &action : m_actions) {
         if (action.id != id)
@@ -310,6 +365,16 @@ QList<QStringList> UserActions::invocationsFor(const QString &id,
             if (program.isEmpty())
                 return {};
             argv[0] = program;
+            if (!action.option.isEmpty()) {
+                const QString chosen = action.optionValues.contains(optionValue)
+                    ? optionValue : action.optionValues.constFirst();
+                const QString env = resolveExecutable(QStringLiteral("env"));
+                if (env.isEmpty())
+                    return {};
+                argv.prepend(QStringLiteral("OMANTA_OPTION_%1=%2")
+                                 .arg(action.option.toUpper(), chosen));
+                argv.prepend(env);
+            }
             argvs.append(argv);
         }
 
@@ -334,9 +399,10 @@ QList<QStringList> UserActions::invocationsFor(const QString &id,
     return {};
 }
 
-void UserActions::run(const QString &id, const QStringList &paths)
+void UserActions::run(const QString &id, const QStringList &paths,
+                      const QString &optionValue)
 {
-    const QList<QStringList> invocations = invocationsFor(id, paths);
+    const QList<QStringList> invocations = invocationsFor(id, paths, optionValue);
     for (const QStringList &argv : invocations) {
         if (argv.size() < 1)
             continue;
