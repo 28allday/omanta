@@ -1821,7 +1821,9 @@ Window {
             selectionExtractable = root.currentTab && root.currentTab.batchRenamable
                 && Platform.isLocal(root.currentTab.path)
                 && root.currentTab.selectionAllArchives();
-            selectionActions = UserActions.actionsFor(actionPaths);
+            const hiddenActions = Settings.hiddenActions;
+            selectionActions = UserActions.actionsFor(actionPaths)
+                .filter(action => !hiddenActions.includes(action.id));
 
             // New Document exists only while ~/Templates has files and the
             // view is a real local directory — hidden otherwise, as
@@ -2099,7 +2101,8 @@ Window {
             delegate: MenuItem {
                 required property var modelData
                 text: modelData.label
-                onTriggered: UserActions.run(modelData.id, contextMenu.actionPaths)
+                onTriggered: UserActions.run(modelData.id, contextMenu.actionPaths,
+                                             Settings.actionOption(modelData.id))
             }
             onObjectAdded: (index, object) => contextMenu.addItem(object)
             onObjectRemoved: (index, object) => contextMenu.removeItem(object)

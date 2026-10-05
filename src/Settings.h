@@ -68,6 +68,9 @@ class Settings : public QObject
     // Nautilus keeps its zoom levels as global settings too.
     Q_PROPERTY(int iconZoom READ iconZoom WRITE setIconZoom NOTIFY changed)
     Q_PROPERTY(int listZoom READ listZoom WRITE setListZoom NOTIFY changed)
+    // Context-menu actions switched off in Preferences, by action id (the
+    // TOML file's basename). Empty by default: every installed action shows.
+    Q_PROPERTY(QStringList hiddenActions READ hiddenActions WRITE setHiddenActions NOTIFY changed)
     // Bookkeeping, not a preference: the Toggle-menu row is added on first
     // launch only, so removing it sticks.
     Q_PROPERTY(bool toggleMenuOffered READ toggleMenuOffered WRITE setToggleMenuOffered NOTIFY changed)
@@ -94,11 +97,18 @@ public:
     bool toggleMenuOffered() const { return boolFor("toggleMenuOffered", false); }
     int iconZoom() const { return qRound(realFor("iconZoom", 64, 32, 128)); }
     int listZoom() const { return qRound(realFor("listZoom", 18, 16, 64)); }
+    QStringList hiddenActions() const { return m_values.value(QStringLiteral("hiddenActions")).split(QLatin1Char(','), Qt::SkipEmptyParts); }
 
     // Every column id, canonical order. The QML layer owns labels and widths.
     Q_INVOKABLE static QStringList allListColumns();
     // Valid caption fields — the columns minus name (the name is the label).
     Q_INVOKABLE static QStringList allCaptionFields();
+
+    // The value chosen for a context-menu action's `option`, keyed by action
+    // id ("actionOption.<id>" in the file). Unvalidated here: only the action
+    // knows its choices, and UserActions falls back to the first.
+    Q_INVOKABLE QString actionOption(const QString &id) const { return m_values.value(QStringLiteral("actionOption.") + id); }
+    Q_INVOKABLE void setActionOption(const QString &id, const QString &value) { set(QStringLiteral("actionOption.") + id, value); }
 
     void setSortFoldersFirst(bool value) { set("sortFoldersFirst", value ? "true" : "false"); }
     void setClickPolicy(const QString &value) { set("clickPolicy", value); }
@@ -119,6 +129,7 @@ public:
     void setToggleMenuOffered(bool value) { set("toggleMenuOffered", value ? "true" : "false"); }
     void setIconZoom(int value) { set("iconZoom", QString::number(value)); }
     void setListZoom(int value) { set("listZoom", QString::number(value)); }
+    void setHiddenActions(const QStringList &value) { set("hiddenActions", value.join(QLatin1Char(','))); }
 
 Q_SIGNALS:
     // One signal for the lot: preference flips are rare and every consumer

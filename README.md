@@ -50,7 +50,9 @@ Omarchy theme.
   light/dark
 - Custom context-menu actions from simple TOML files — no extension API
   needed (Omarchy's transcode/LocalSend/Omarchy-Send menu items ship
-  included, plus Dropbox share links if you use Dropbox)
+  included, plus Dropbox share links if you use Dropbox). An action can
+  declare a setting that shows up in Preferences, and any action can be
+  switched off there — see `examples/actions/` for one
 - Multi-window single instance, `org.freedesktop.FileManager1` — "open
   containing folder" from browsers and other apps just works
 
