@@ -68,6 +68,9 @@ class Settings : public QObject
     // Nautilus keeps its zoom levels as global settings too.
     Q_PROPERTY(int iconZoom READ iconZoom WRITE setIconZoom NOTIFY changed)
     Q_PROPERTY(int listZoom READ listZoom WRITE setListZoom NOTIFY changed)
+    // How long a bookmark is held before the sidebar enters reorder mode, in
+    // seconds: 0.5 to 2 in half-second steps.
+    Q_PROPERTY(qreal bookmarkHoldSeconds READ bookmarkHoldSeconds WRITE setBookmarkHoldSeconds NOTIFY changed)
     // Bookkeeping, not a preference: the Toggle-menu row is added on first
     // launch only, so removing it sticks.
     Q_PROPERTY(bool toggleMenuOffered READ toggleMenuOffered WRITE setToggleMenuOffered NOTIFY changed)
@@ -94,6 +97,8 @@ public:
     bool toggleMenuOffered() const { return boolFor("toggleMenuOffered", false); }
     int iconZoom() const { return qRound(realFor("iconZoom", 64, 32, 128)); }
     int listZoom() const { return qRound(realFor("listZoom", 18, 16, 64)); }
+    // In-range values snap to the nearest half second.
+    qreal bookmarkHoldSeconds() const { return qRound(realFor("bookmarkHoldSeconds", 1.0, 0.5, 2.0) * 2) / 2.0; }
 
     // Every column id, canonical order. The QML layer owns labels and widths.
     Q_INVOKABLE static QStringList allListColumns();
@@ -119,6 +124,7 @@ public:
     void setToggleMenuOffered(bool value) { set("toggleMenuOffered", value ? "true" : "false"); }
     void setIconZoom(int value) { set("iconZoom", QString::number(value)); }
     void setListZoom(int value) { set("listZoom", QString::number(value)); }
+    void setBookmarkHoldSeconds(qreal value) { set("bookmarkHoldSeconds", QString::number(value, 'f', 1)); }
 
 Q_SIGNALS:
     // One signal for the lot: preference flips are rare and every consumer
