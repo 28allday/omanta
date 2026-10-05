@@ -2171,11 +2171,35 @@ Window {
     Shortcut { sequence: "F6"; onActivated: if (root.currentSlot) root.currentSlot.cyclePane() }
 
     Shortcut { sequence: "F9"; onActivated: root.toggleSidebar() }
-    // Only while the sidebar is slid over; otherwise Escape stays the views'.
+    // Only while the sidebar is slid over or its bookmarks are being
+    // reordered; otherwise Escape stays the views'.
     Shortcut {
         sequence: "Escape"
-        enabled: root.sidebarOverlayOpen
-        onActivated: root.sidebarOverlayOpen = false
+        enabled: root.sidebarOverlayOpen || sidebar.reorderMode
+        onActivated: {
+            if (sidebar.reorderMode)
+                sidebar.reorderMode = false;
+            else
+                root.sidebarOverlayOpen = false;
+        }
+    }
+
+    // While the sidebar's bookmarks are being reordered, a press anywhere but
+    // on a bookmark ends it — and goes no further, so the same press can't
+    // also open or select something.
+    MouseArea {
+        id: reorderCatcher
+
+        anchors.fill: parent
+        z: 100
+        enabled: sidebar.reorderMode
+        acceptedButtons: Qt.AllButtons
+        onPressed: mouse => {
+            if (sidebar.isOverBookmark(reorderCatcher, mouse.x, mouse.y))
+                mouse.accepted = false;
+            else
+                sidebar.reorderMode = false;
+        }
     }
     Shortcut { sequence: "Ctrl+D"; onActivated: root.toggleBookmark() }
     Shortcut { sequence: "Ctrl+F"; onActivated: root.openSearch() }
