@@ -39,6 +39,22 @@ Rectangle {
             places.addBookmark(location);
     }
 
+    // Bookmark reorder mode: entered by holding a bookmark (or from its
+    // menu), left by a press anywhere else or Escape — both window-side.
+    property bool reorderMode: false
+    onVisibleChanged: if (!visible) reorderMode = false
+
+    // Whether a point in `item`'s coordinates lands on a bookmark row, so
+    // the window's press-outside catcher can let those presses through.
+    function isOverBookmark(item, x, y) {
+        const inList = item.mapToItem(list, x, y);
+        if (inList.x < 0 || inList.y < 0 || inList.x >= list.width || inList.y >= list.height)
+            return false;
+        const inContent = item.mapToItem(list.contentItem, x, y);
+        const row = list.itemAt(inContent.x, inContent.y);
+        return row !== null && row.bookmark === true;
+    }
+
     implicitWidth: 200
     color: Colors.chrome
 
@@ -74,6 +90,8 @@ Rectangle {
         clip: true
         model: places
         boundsBehavior: Flickable.StopAtBounds
+        // A held bookmark's drag must not turn into a flick.
+        interactive: !root.reorderMode
 
         // Nautilus draws no section headers — just a hairline between the
         // fixed places, the bookmarks and the devices. Same here.
@@ -94,7 +112,15 @@ Rectangle {
             }
         }
 
-        delegate: Rectangle {
+        // Reordering slides the other bookmarks aside as the held one passes.
+        move: Transition {
+            NumberAnimation { property: "y"; duration: 120; easing.type: Easing.OutCubic }
+        }
+        moveDisplaced: Transition {
+            NumberAnimation { property: "y"; duration: 120; easing.type: Easing.OutCubic }
+        }
+
+        delegate: Item {
             id: row
 
             required property int index
@@ -105,24 +131,25 @@ Rectangle {
             required property bool mountable
             required property bool ejectable
 
+            readonly property bool bookmark: section === "Bookmarks"
             readonly property bool current: location !== "" && location === root.currentLocation
             // Recent is read-only and Network is not a folder; everywhere
             // else with a location can take a drop — dropping on Starred
             // stars, on Trash trashes, elsewhere transfers (Nautilus's rules).
+            // Reordering takes no file drops, so nothing transfers by accident.
             readonly property bool droppable: location !== ""
                                               && location !== "recent:///"
                                               && location !== "network:///"
+                                              && !root.reorderMode
+            // This bookmark is the one being dragged into a new place.
+            property bool held: false
 
             // ListView places its delegates at x 0 and ignores a delegate's
             // own x, so the 6px inset on each side lives on the view instead.
             width: list.width
             height: 30
-            radius: Colors.radius
-            color: current ? Colors.selection
-                 : rowDrop.containsDrag ? Colors.hover
-                 : rowMouse.containsMouse ? Colors.hover : "transparent"
-            border.color: rowDrop.containsDrag ? Colors.accent : "transparent"
-            border.width: rowDrop.containsDrag ? 1 : 0
+            // Only the bookmarks are live while reordering.
+            opacity: root.reorderMode && !bookmark ? 0.4 : 1
 
             DropArea {
                 id: rowDrop
@@ -135,52 +162,120 @@ Rectangle {
                 }
             }
 
-            Image {
-                id: icon
-
-                anchors.left: parent.left
-                anchors.leftMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                source: Colors.tint(row.iconSource,
-                                    row.current ? Colors.selectionText : Colors.textDim)
-                sourceSize: Qt.size(16, 16)
-                opacity: row.mountable ? 0.6 : 1
-            }
-
-            Text {
-                textFormat: Text.PlainText
-                anchors.left: icon.right
-                anchors.leftMargin: 8
-                anchors.right: ejectButton.visible ? ejectButton.left : parent.right
-                anchors.rightMargin: 6
-                anchors.verticalCenter: parent.verticalCenter
-                text: row.name
-                color: row.current ? Colors.selectionText : row.mountable ? Colors.textDim : Colors.text
-                font.pixelSize: 13
-                elide: Text.ElideRight
-            }
-
-            Text {
-                textFormat: Text.PlainText
-                id: ejectButton
-
-                anchors.right: parent.right
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                visible: row.ejectable
-                text: "⏏"
-                color: ejectMouse.containsMouse ? Colors.accent : Colors.textDim
-                font.pixelSize: 12
-
-                MouseArea {
-                    id: ejectMouse
-                    anchors.fill: parent
-                    anchors.margins: -6
-                    hoverEnabled: true
-                    onClicked: places.eject(row.index)
+            // The held bookmark passing over this one swaps them; the file
+            // is written once, when it is let go.
+            DropArea {
+                anchors.fill: parent
+                keys: ["omanta-bookmark"]
+                enabled: row.bookmark && root.reorderMode
+                onEntered: drag => {
+                    if (drag.source !== row)
+                        places.moveBookmark(drag.source.index, row.index);
                 }
             }
 
+            Rectangle {
+                id: tile
+
+                width: row.width
+                height: row.height
+                radius: Colors.radius
+                color: row.current ? Colors.selection
+                     : rowDrop.containsDrag ? Colors.hover
+                     : rowMouse.containsMouse || row.held ? Colors.hover : "transparent"
+                border.color: rowDrop.containsDrag || (row.bookmark && root.reorderMode)
+                              ? Colors.accent : "transparent"
+                border.width: border.color === Colors.accent ? 1 : 0
+
+                Drag.active: row.held
+                Drag.source: row
+                Drag.keys: ["omanta-bookmark"]
+                Drag.hotSpot.x: width / 2
+                Drag.hotSpot.y: height / 2
+
+                // Lifted out of the row while held, so it follows the pointer
+                // above its neighbours; let go, it settles into its new slot.
+                states: State {
+                    when: row.held
+                    ParentChange { target: tile; parent: list }
+                    PropertyChanges { target: tile; z: 10 }
+                }
+
+                // Fills across while a bookmark is held, so the wait for
+                // reorder mode reads as progress rather than a stuck click.
+                Rectangle {
+                    id: holdFill
+
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 0
+                    radius: Colors.radius
+                    color: Colors.accent
+                    opacity: 0.25
+                    visible: width > 0
+
+                    NumberAnimation {
+                        target: holdFill
+                        property: "width"
+                        from: 0
+                        to: tile.width
+                        duration: rowMouse.pressAndHoldInterval
+                        running: row.bookmark && !root.reorderMode && rowMouse.pressed
+                                 && (rowMouse.pressedButtons & Qt.LeftButton)
+                        onStopped: holdFill.width = 0
+                    }
+                }
+
+                Image {
+                    id: icon
+
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    source: Colors.tint(row.iconSource,
+                                        row.current ? Colors.selectionText : Colors.textDim)
+                    sourceSize: Qt.size(16, 16)
+                    opacity: row.mountable ? 0.6 : 1
+                }
+
+                Text {
+                    textFormat: Text.PlainText
+                    anchors.left: icon.right
+                    anchors.leftMargin: 8
+                    anchors.right: ejectButton.visible ? ejectButton.left : parent.right
+                    anchors.rightMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: row.name
+                    color: row.current ? Colors.selectionText : row.mountable ? Colors.textDim : Colors.text
+                    font.pixelSize: 13
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    textFormat: Text.PlainText
+                    id: ejectButton
+
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: row.ejectable
+                    text: "⏏"
+                    color: ejectMouse.containsMouse ? Colors.accent : Colors.textDim
+                    font.pixelSize: 12
+
+                    MouseArea {
+                        id: ejectMouse
+                        anchors.fill: parent
+                        anchors.margins: -6
+                        hoverEnabled: true
+                        onClicked: places.eject(row.index)
+                    }
+                }
+            }
+
+            // Stays with the row while the tile is lifted, keeping the grab
+            // for the whole drag.
             MouseArea {
                 id: rowMouse
 
@@ -188,7 +283,38 @@ Rectangle {
                 anchors.rightMargin: row.ejectable ? 24 : 0
                 hoverEnabled: true
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+                pressAndHoldInterval: Settings.bookmarkHoldSeconds * 1000
+                drag.target: row.held ? tile : undefined
+                drag.axis: Drag.YAxis
+                drag.minimumY: 0
+                drag.maximumY: list.height - row.height
+
+                function letGo() {
+                    if (!row.held)
+                        return;
+                    row.held = false;
+                    places.saveBookmarkOrder();
+                }
+
+                onPressed: mouse => {
+                    if (root.reorderMode && row.bookmark && mouse.button === Qt.LeftButton)
+                        row.held = true;
+                }
+                // Holding a bookmark enters reorder mode with that one already
+                // in hand. Anything else lets go as a normal click.
+                onPressAndHold: mouse => {
+                    if (root.reorderMode || !row.bookmark || mouse.button !== Qt.LeftButton) {
+                        mouse.accepted = false;
+                        return;
+                    }
+                    root.reorderMode = true;
+                    row.held = true;
+                }
+                onReleased: letGo()
+                onCanceled: letGo()
                 onClicked: mouse => {
+                    if (root.reorderMode)
+                        return;
                     if (mouse.button === Qt.RightButton) {
                         rowMenu.rowLocation = row.location;
                         rowMenu.rowSection = row.section;
@@ -480,6 +606,13 @@ Rectangle {
             text: qsTr("Open in New Tab")
             enabled: rowMenu.rowLocation !== "" && rowMenu.rowLocation !== "network:///"
             onTriggered: root.openInNewTabRequested(rowMenu.rowLocation)
+        }
+
+        MenuItem {
+            text: qsTr("Reorder Bookmarks")
+            visible: rowMenu.rowSection === "Bookmarks"
+            height: visible ? implicitHeight : 0
+            onTriggered: root.reorderMode = true
         }
 
         MenuItem {

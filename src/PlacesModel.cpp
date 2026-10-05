@@ -523,6 +523,63 @@ void PlacesModel::removeBookmark(const QString &location)
     m_bookmarksSettle.start();
 }
 
+void PlacesModel::moveBookmark(int from, int to)
+{
+    const QString section = QStringLiteral("Bookmarks");
+    if (from == to || from < 0 || to < 0 || from >= m_places.size() || to >= m_places.size()
+        || m_places.at(from).section != section || m_places.at(to).section != section)
+        return;
+
+    // Qt's move destination is the row the moved one lands before, so moving
+    // down names the row past the target.
+    if (!beginMoveRows({}, from, from, {}, to > from ? to + 1 : to))
+        return;
+    m_places.move(from, to);
+    endMoveRows();
+}
+
+void PlacesModel::saveBookmarkOrder()
+{
+    QFile file(bookmarksFilePath());
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;
+    QStringList lines;
+    const QStringList raw = QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'));
+    file.close();
+    for (const QString &line : raw) {
+        if (!line.trimmed().isEmpty())
+            lines.append(line.trimmed());
+    }
+
+    // Each shown bookmark takes its own line back, label and all; lines the
+    // section never showed (unparseable ones) keep to the end, unharmed.
+    QStringList ordered;
+    QStringList unused = lines;
+    for (const Place &place : std::as_const(m_places)) {
+        if (place.section != QLatin1String("Bookmarks"))
+            continue;
+        for (qsizetype i = 0; i < unused.size(); ++i) {
+            const QString &line = unused.at(i);
+            const qsizetype space = line.indexOf(QLatin1Char(' '));
+            if (Location::clean(space < 0 ? line : line.left(space)) == place.location) {
+                ordered.append(unused.takeAt(i));
+                break;
+            }
+        }
+    }
+    ordered += unused;
+    if (ordered == lines)
+        return;
+
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        return;
+    for (const QString &line : std::as_const(ordered))
+        file.write(line.toUtf8() + '\n');
+    file.close();
+
+    m_bookmarksSettle.start();
+}
+
 QString PlacesModel::bookmarksFilePath() const
 {
     const QString override = qEnvironmentVariable("OMANTA_BOOKMARKS_FILE");

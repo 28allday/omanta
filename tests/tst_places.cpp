@@ -30,6 +30,8 @@ private Q_SLOTS:
     void addBookmarkRefusesDuplicates();
     void removeBookmarkKeepsTheOthersAndTheirLabels();
     void bookmarkWritesRefreshTheModel();
+    void moveBookmarkReordersAndSaves();
+    void moveBookmarkStaysInsideBookmarks();
 
 private:
     QString writeBookmarks(const QString &content);
@@ -273,6 +275,67 @@ void TestPlaces::bookmarkWritesRefreshTheModel()
     QVERIFY(spy.wait(5000));
     QCOMPARE(namesInSection(model, QStringLiteral("Bookmarks")),
              QStringList({ QStringLiteral("Scratch") }));
+}
+
+// The first row of `section`, for addressing rows by model index.
+static int firstRowOf(PlacesModel &model, const QString &section)
+{
+    for (int row = 0; row < model.rowCount(); ++row) {
+        if (model.data(model.index(row, 0), PlacesModel::SectionRole).toString() == section)
+            return row;
+    }
+    return -1;
+}
+
+void TestPlaces::moveBookmarkReordersAndSaves()
+{
+    const QString path = writeBookmarks(QStringLiteral("file:///tmp Scratch\n"
+                                                       "file:///var/log\n"
+                                                       "smb://server/share Media\n"));
+    PlacesModel model;
+    const int first = firstRowOf(model, QStringLiteral("Bookmarks"));
+
+    // Down past one neighbour, then back up to the top: the model follows
+    // each step, the file only once asked.
+    model.moveBookmark(first, first + 2);
+    QCOMPARE(namesInSection(model, QStringLiteral("Bookmarks")),
+             QStringList({ QStringLiteral("log"), QStringLiteral("Media"), QStringLiteral("Scratch") }));
+    model.moveBookmark(first + 1, first);
+    QCOMPARE(namesInSection(model, QStringLiteral("Bookmarks")),
+             QStringList({ QStringLiteral("Media"), QStringLiteral("log"), QStringLiteral("Scratch") }));
+    QCOMPARE(readFile(path), QStringLiteral("file:///tmp Scratch\nfile:///var/log\nsmb://server/share Media\n"));
+
+    // Saved, each line keeps its label.
+    model.saveBookmarkOrder();
+    QCOMPARE(readFile(path),
+             QStringLiteral("smb://server/share Media\nfile:///var/log\nfile:///tmp Scratch\n"));
+
+    // The re-read after the write keeps the new order.
+    QSignalSpy spy(&model, &PlacesModel::countChanged);
+    QVERIFY(spy.wait(5000));
+    QCOMPARE(namesInSection(model, QStringLiteral("Bookmarks")),
+             QStringList({ QStringLiteral("Media"), QStringLiteral("log"), QStringLiteral("Scratch") }));
+}
+
+void TestPlaces::moveBookmarkStaysInsideBookmarks()
+{
+    const QString path = writeBookmarks(QStringLiteral("file:///tmp Scratch\n"
+                                                       "file:///var/log\n"));
+    PlacesModel model;
+    const int first = firstRowOf(model, QStringLiteral("Bookmarks"));
+    const QStringList places = namesInSection(model, QStringLiteral("Places"));
+
+    // Onto a Places row, or off the end: refused, nothing moves.
+    model.moveBookmark(first, 0);
+    model.moveBookmark(first, model.rowCount());
+    model.moveBookmark(-1, first);
+    QCOMPARE(namesInSection(model, QStringLiteral("Places")), places);
+    QCOMPARE(namesInSection(model, QStringLiteral("Bookmarks")),
+             QStringList({ QStringLiteral("Scratch"), QStringLiteral("log") }));
+
+    // An unchanged order writes nothing.
+    model.saveBookmarkOrder();
+    QCOMPARE(readFile(path), QStringLiteral("file:///tmp Scratch\nfile:///var/log\n"));
 }
 
 QTEST_GUILESS_MAIN(TestPlaces)

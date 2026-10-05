@@ -74,6 +74,7 @@ Dialog {
         captionSecond.currentIndex = captionIndex(captions[1]);
         captionThird.currentIndex = captionIndex(captions[2]);
         opacitySlider.value = Settings.backgroundOpacity;
+        holdSlider.value = Settings.bookmarkHoldSeconds;
         syncFileManager();
     }
 
@@ -408,6 +409,34 @@ Dialog {
                             font.pixelSize: 11
                         }
                     }
+                }
+            }
+
+            SectionTitle { text: qsTr("Sidebar") }
+            SectionCaption {
+                text: qsTr("Hold a bookmark this long to reorder the bookmarks. Drag them into place, then click anywhere else or press Escape to finish.")
+            }
+
+            PrefRow {
+                label: qsTr("Reorder Hold Time")
+
+                Text {
+                    textFormat: Text.PlainText
+                    text: qsTr("%1 s").arg(holdSlider.value.toFixed(1))
+                    color: Colors.textDim
+                    font.pixelSize: 12
+                }
+
+                Slider {
+                    id: holdSlider
+                    from: 0.5
+                    to: 2.0
+                    stepSize: 0.5
+                    snapMode: Slider.SnapAlways
+                    implicitWidth: root.controlWidth
+                    leftPadding: 0
+                    rightPadding: 0
+                    onMoved: Settings.bookmarkHoldSeconds = value
                 }
             }
 

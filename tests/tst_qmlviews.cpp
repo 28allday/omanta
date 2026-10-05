@@ -99,6 +99,7 @@ private Q_SLOTS:
     void spacePreviewsInSushi();
     void tabCloseButtonClosesTab();
     void tabTitlesFollowNavigation();
+    void bookmarksReorderByHolding();
 
 private:
     QTemporaryDir m_cache;
@@ -1566,6 +1567,114 @@ void TestQmlViews::tabTitlesFollowNavigation()
     go("two");
     openTab("one");
     QTRY_COMPARE(tabStripLabels(window->contentItem()), (QStringList{"two", "one"}));
+}
+
+// The sidebar's bookmark rows, top to bottom.
+static QList<QQuickItem *> bookmarkRows(QQuickItem *root)
+{
+    QList<QQuickItem *> rows;
+    collectItems(root, "bookmark", true, rows);
+    std::sort(rows.begin(), rows.end(), [](QQuickItem *a, QQuickItem *b) {
+        return a->property("index").toInt() < b->property("index").toInt();
+    });
+    return rows;
+}
+
+void TestQmlViews::bookmarksReorderByHolding()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    QStringList lines;
+    for (const char *folder : {"one", "two", "three"}) {
+        QVERIFY(QDir().mkpath(tree.filePath(folder)));
+        lines << QUrl::fromLocalFile(tree.filePath(folder)).toString() + QStringLiteral(" ") + folder;
+    }
+    const QString bookmarksFile = config.filePath("OMANTA_BOOKMARKS_FILE");
+    {
+        QFile file(bookmarksFile);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write((lines.join('\n') + '\n').toUtf8());
+    }
+    const auto savedOrder = [&] {
+        QFile file(bookmarksFile);
+        if (!file.open(QIODevice::ReadOnly))
+            return QStringList();
+        QStringList names;
+        for (const QString &line : QString::fromUtf8(file.readAll()).split('\n', Qt::SkipEmptyParts))
+            names << line.section(' ', 1);
+        return names;
+    };
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.path());
+    QQuickWindow *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = qobject_cast<QQuickWindow *>(child);
+            break;
+        }
+    }
+    QVERIFY(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QObject *sidebar = findDialog(window, "Sidebar");
+    QVERIFY(sidebar);
+    const auto reordering = [&] { return sidebar->property("reorderMode").toBool(); };
+    const auto current = [&] { return window->property("currentTab").value<QObject *>(); };
+    QTRY_COMPARE(bookmarkRows(window->contentItem()).size(), 3);
+
+    // A quick click still just opens the bookmark.
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      centreOf(bookmarkRows(window->contentItem()).at(1)));
+    QTRY_COMPARE(current()->property("path").toString(), tree.filePath("two"));
+    QVERIFY(!reordering());
+
+    // Held for the default second: reorder mode, with "one" in hand. Dragged
+    // below "three" and let go, the file takes the new order.
+    const QList<QQuickItem *> rows = bookmarkRows(window->contentItem());
+    const QPoint start = centreOf(rows.at(0));
+    const QPoint end = centreOf(rows.at(2)) + QPoint(0, 4);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, start);
+    QTest::qWait(600);
+    QVERIFY(!reordering());
+    QTRY_VERIFY(reordering());
+    for (int step = 1; step <= 12; ++step) {
+        QTest::mouseMove(window, start + (end - start) * step / 12, 15);
+    }
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, end);
+    QTRY_COMPARE(savedOrder(), (QStringList{"two", "three", "one"}));
+    QVERIFY(reordering());
+    // Holding did not also open the bookmark.
+    QCOMPARE(current()->property("path").toString(), tree.filePath("two"));
+
+    // In reorder mode a click on a bookmark opens nothing; a press on the
+    // files ends the mode and goes no further.
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      centreOf(bookmarkRows(window->contentItem()).at(0)));
+    QTest::qWait(100);
+    QCOMPARE(current()->property("path").toString(), tree.filePath("two"));
+    QVERIFY(reordering());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      QPoint(window->width() - 40, window->height() / 2));
+    QTRY_VERIFY(!reordering());
+
+    // Escape ends it too.
+    QVERIFY(sidebar->setProperty("reorderMode", true));
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_VERIFY(!reordering());
+    QCOMPARE(savedOrder(), (QStringList{"two", "three", "one"}));
 }
 
 #include "tst_qmlviews.moc"
