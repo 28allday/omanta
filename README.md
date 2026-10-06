@@ -31,7 +31,13 @@ Omarchy theme.
   `sftp://`) with credential prompts, Trash, Recent, Starred, bookmarks.
   F9 shows or hides it, and the choice is remembered. In a narrow window
   (tiled side by side on a laptop, say) it tucks itself away; F9 or the
-  sidebar button slides it back over the files.
+  sidebar button slides it back over the files. Drag a folder onto the
+  sidebar and a "New Bookmark" row appears to drop it on (Ctrl+D bookmarks
+  the folder you are in, including remote ones)
+- Drag and drop between folders, tabs, the sidebar and other applications.
+  A label under the drag image says what letting go will do — move within a
+  filesystem, copy across one, Ctrl forces a copy, Shift forces a move —
+  and it changes as you press the keys
 - Hidden files: Ctrl+H or Preferences → Show Hidden Files, remembered
   after a restart
 - Quick preview: Space (or right-click → Preview) shows the selected file in
@@ -65,8 +71,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.25/omanta-0.1.25-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.25-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.26/omanta-0.1.26-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.26-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —

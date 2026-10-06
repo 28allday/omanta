@@ -395,6 +395,11 @@ bool Platform::sameFilesystem(const QString &a, const QString &b) const
         return id;
     };
 
+    // Different origins never share a filesystem, and the question is asked
+    // while a drag merely hovers — never let a foreign URI reach GIO for it.
+    if (!Location::sameOrigin(a, b))
+        return false;
+
     const QString idA = filesystemId(a);
     // An unanswerable question (either side unreachable) is treated as
     // "different", which errs toward copy — the non-destructive default.

@@ -142,8 +142,14 @@ Item {
             // Empty space accepts drops into the folder being viewed. Behind
             // the list, so folder rows' own DropAreas win where they overlap.
             DropArea {
+                id: viewDrop
+
                 anchors.fill: parent
+                onEntered: drag => DragDrop.hover(viewDrop, drag, root.tab.path, root.tab.title)
+                onPositionChanged: drag => DragDrop.hover(viewDrop, drag, root.tab.path, root.tab.title)
+                onExited: DragDrop.leave(viewDrop)
                 onDropped: drop => {
+                    DragDrop.leave(viewDrop);
                     root.tab.requestDrop(drop.urls, root.tab.path);
                     drop.accept();
                 }
@@ -313,7 +319,11 @@ Item {
 
                     anchors.fill: parent
                     enabled: row.isDir
+                    onEntered: drag => DragDrop.hover(rowDrop, drag, row.filePath, row.displayName)
+                    onPositionChanged: drag => DragDrop.hover(rowDrop, drag, row.filePath, row.displayName)
+                    onExited: DragDrop.leave(rowDrop)
                     onDropped: drop => {
+                        DragDrop.leave(rowDrop);
                         root.tab.requestDrop(drop.urls, row.filePath);
                         drop.accept();
                     }

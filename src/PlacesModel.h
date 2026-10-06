@@ -29,6 +29,12 @@ class PlacesModel : public QAbstractListModel
     // Supplies GMountOperations, so a volume that needs credentials asks
     // through the window's one dialog rather than failing.
     Q_PROPERTY(Mounter *mounter READ mounter WRITE setMounter NOTIFY mounterChanged)
+    // While a folder drag hovers the sidebar, the Bookmarks section ends in a
+    // "New Bookmark" row to drop it on — Nautilus's placeholder. The row is
+    // part of the model so it takes its place in the section like any other
+    // bookmark, hairline and all, and goes when the drag does.
+    Q_PROPERTY(bool bookmarkDropTarget READ bookmarkDropTarget WRITE setBookmarkDropTarget
+               NOTIFY bookmarkDropTargetChanged)
 
 public:
     enum Roles {
@@ -38,6 +44,7 @@ public:
         SectionRole,    // "Places" | "Devices" | "Bookmarks" | "Network"
         MountableRole,  // a volume that needs mounting before it has a location
         EjectableRole,
+        PlaceholderRole, // the "New Bookmark" drop row, not a place
     };
     Q_ENUM(Roles)
 
@@ -72,9 +79,18 @@ public:
     Q_INVOKABLE void addBookmark(const QString &location);
     Q_INVOKABLE void removeBookmark(const QString &location);
 
+    // The subset of `locations` a drop could bookmark: folders that are not
+    // bookmarked yet. Files and existing bookmarks fall out, so a drag of
+    // nothing bookmarkable raises no placeholder.
+    Q_INVOKABLE QStringList bookmarkable(const QStringList &locations) const;
+
+    bool bookmarkDropTarget() const { return m_bookmarkDropTarget; }
+    void setBookmarkDropTarget(bool on);
+
 Q_SIGNALS:
     void countChanged();
     void mounterChanged();
+    void bookmarkDropTargetChanged();
     void mounted(const QString &location);
     void mountFailed(const QString &name, const QString &message);
 
@@ -89,6 +105,7 @@ private:
         // Set only for device rows; owned references, released on splice.
         GVolume *volume = nullptr;
         GMount *mount = nullptr;
+        bool placeholder = false;
     };
 
     static void onVolumeEvent(GVolumeMonitor *, gpointer, gpointer data);
@@ -125,4 +142,5 @@ private:
     QFileSystemWatcher *m_bookmarksWatcher = nullptr;
     QTimer m_devicesSettle;
     QTimer m_bookmarksSettle;
+    bool m_bookmarkDropTarget = false;
 };

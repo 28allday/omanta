@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(omanta VERSION 0.1.25 LANGUAGES CXX)
+project(omanta VERSION 0.1.26 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -78,7 +78,7 @@ set(OMANTA_SOURCES
     src/UserActions.h
 )
 
-set_source_files_properties(qml/Colors.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/Colors.qml qml/DragDrop.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 set(OMANTA_QML_FILES
     qml/Main.qml
@@ -90,6 +90,7 @@ set(OMANTA_QML_FILES
     qml/FileListView.qml
     qml/FileIconView.qml
     qml/FileDrag.qml
+    qml/DragDrop.qml
     qml/ToolbarButton.qml
     qml/DialogCloseButton.qml
     qml/PromptDialog.qml

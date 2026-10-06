@@ -35,6 +35,11 @@ Window {
     readonly property bool sortDescending: currentTab ? currentTab.sortDescending : false
     readonly property int zoom: currentTab ? currentTab.zoom : 0
     readonly property int visibleCount: currentTab ? currentTab.files.count : 0
+    // The drop hint and the sidebar's New Bookmark row, readable over D-Bus
+    // so a real compositor drag can be verified from a script.
+    readonly property string dragHint: DragDrop.text
+    readonly property bool dragHintShown: dropHint.visible
+    readonly property bool bookmarkDropTarget: sidebar.bookmarkDropTarget
     // The proxy's live value, not the Settings one: reading it end-to-end
     // proves the file → Settings → binding → proxy chain, which is what the
     // UI verification asserts on.
@@ -2209,4 +2214,40 @@ Window {
     Shortcut { sequence: "Ctrl+="; onActivated: if (root.currentTab) root.currentTab.zoomIn() }
     Shortcut { sequence: "Ctrl+-"; onActivated: if (root.currentTab) root.currentTab.zoomOut() }
     Shortcut { sequence: "Ctrl+0"; onActivated: if (root.currentTab) root.currentTab.resetZoom() }
+
+    // The drop hint: a small label just above the drag image saying what
+    // letting go will do here — "Move to “Photos”", "Copy to “Photos”",
+    // "Move to Trash" — kept current with the modifier keys by DragDrop.
+    // The drag image is the compositor's: some draw the 56 px card with the
+    // hot spot (28 px in) under the pointer, some with its top-left corner
+    // there. Above the pointer clears it either way, and the region above a
+    // drop target is never itself one, so clamping to the window never puts
+    // the label under the card.
+    Rectangle {
+        id: dropHint
+
+        readonly property int gap: 6
+
+        z: 1000
+        visible: DragDrop.active && DragDrop.text !== ""
+        x: Math.max(gap, Math.min(DragDrop.x - 28, root.width - width - gap))
+        y: Math.max(gap, Math.min(DragDrop.y - 28 - gap - height, root.height - height - gap))
+        width: dropHintLabel.implicitWidth + 20
+        height: 24
+        radius: Colors.radius
+        // Opaque like the drag card: a hint must not fade with the window.
+        color: Qt.alpha(Colors.chrome, 1)
+        border.color: Colors.border
+        border.width: 1
+
+        Text {
+            id: dropHintLabel
+
+            textFormat: Text.PlainText
+            anchors.centerIn: parent
+            text: DragDrop.text
+            color: Colors.text
+            font.pixelSize: 12
+        }
+    }
 }

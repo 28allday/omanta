@@ -49,6 +49,46 @@ Rectangle {
 
     // Model count published for the UI verification script.
     readonly property int placesCount: places.count
+    // Whether the New Bookmark row is up — for the same scripts.
+    readonly property bool bookmarkDropTarget: places.bookmarkDropTarget
+
+    // ---- dropping a folder to bookmark it ----------------------------------
+    //
+    // While a drag carrying folders that are not yet bookmarked hovers the
+    // sidebar, the model shows a "New Bookmark" row at the end of the
+    // Bookmarks section; dropping on it bookmarks them. The folders are worked
+    // out as the drag comes in; rows report arrivals and departures, and a
+    // short settle keeps the placeholder from flickering as the pointer
+    // crosses from one row to the next (each hop is an exit then an enter).
+    property var pendingBookmarks: []
+
+    function dragArrived(drag) {
+        dragSettle.stop();
+        pendingBookmarks = places.bookmarkable(Platform.locationsFromUrls(drag.urls));
+        places.bookmarkDropTarget = pendingBookmarks.length > 0;
+    }
+
+    function dragLeft() {
+        dragSettle.restart();
+    }
+
+    function dragEnded() {
+        dragSettle.stop();
+        places.bookmarkDropTarget = false;
+        pendingBookmarks = [];
+    }
+
+    function bookmarkLabel() {
+        return pendingBookmarks.length === 1
+             ? qsTr("Bookmark “%1”").arg(Platform.baseName(pendingBookmarks[0]))
+             : qsTr("Bookmark %1 folders").arg(pendingBookmarks.length);
+    }
+
+    Timer {
+        id: dragSettle
+        interval: 150
+        onTriggered: root.dragEnded()
+    }
 
     Connections {
         target: places
@@ -57,6 +97,21 @@ Rectangle {
         }
         function onMountFailed(name, message) {
             root.mountError(name, message);
+        }
+    }
+
+    // The gaps between rows and the empty space below them. Behind the list,
+    // so a row's own DropArea wins where they overlap; a drop here does
+    // nothing, but a drag passing over it keeps the bookmark placeholder up.
+    DropArea {
+        id: backdrop
+
+        anchors.fill: list
+        onEntered: drag => root.dragArrived(drag)
+        onExited: root.dragLeft()
+        onDropped: drop => {
+            root.dragEnded();
+            drop.accepted = false;
         }
     }
 
@@ -104,14 +159,17 @@ Rectangle {
             required property string section
             required property bool mountable
             required property bool ejectable
+            required property bool placeholder
 
             readonly property bool current: location !== "" && location === root.currentLocation
             // Recent is read-only and Network is not a folder; everywhere
             // else with a location can take a drop — dropping on Starred
             // stars, on Trash trashes, elsewhere transfers (Nautilus's rules).
-            readonly property bool droppable: location !== ""
-                                              && location !== "recent:///"
-                                              && location !== "network:///"
+            // The New Bookmark placeholder exists only to be dropped on.
+            readonly property bool droppable: placeholder
+                                              || (location !== ""
+                                                  && location !== "recent:///"
+                                                  && location !== "network:///")
 
             // ListView places its delegates at x 0 and ignores a delegate's
             // own x, so the 6px inset on each side lives on the view instead.
@@ -121,16 +179,46 @@ Rectangle {
             color: current ? Colors.selection
                  : rowDrop.containsDrag ? Colors.hover
                  : rowMouse.containsMouse ? Colors.hover : "transparent"
-            border.color: rowDrop.containsDrag ? Colors.accent : "transparent"
-            border.width: rowDrop.containsDrag ? 1 : 0
+            // The placeholder is outlined so it reads as a slot, not a place.
+            border.color: rowDrop.containsDrag ? Colors.accent
+                        : placeholder ? Colors.border : "transparent"
+            border.width: rowDrop.containsDrag || placeholder ? 1 : 0
+
+            // What the hint under the drag image should say for this row.
+            function dragHover(drag) {
+                if (row.placeholder)
+                    DragDrop.hoverFixed(rowDrop, drag, root.bookmarkLabel());
+                else if (row.location === "trash:///")
+                    DragDrop.hoverFixed(rowDrop, drag, qsTr("Move to Trash"));
+                else if (row.location === "starred:///")
+                    DragDrop.hoverFixed(rowDrop, drag, qsTr("Star"));
+                else
+                    DragDrop.hover(rowDrop, drag, row.location, row.name);
+            }
 
             DropArea {
                 id: rowDrop
 
                 anchors.fill: parent
                 enabled: row.droppable
+                onEntered: drag => {
+                    root.dragArrived(drag);
+                    row.dragHover(drag);
+                }
+                onPositionChanged: drag => row.dragHover(drag)
+                onExited: {
+                    root.dragLeft();
+                    DragDrop.leave(rowDrop);
+                }
                 onDropped: drop => {
-                    root.dropRequested(drop.urls, row.location);
+                    DragDrop.leave(rowDrop);
+                    if (row.placeholder) {
+                        for (const folder of root.pendingBookmarks)
+                            places.addBookmark(folder);
+                    } else {
+                        root.dropRequested(drop.urls, row.location);
+                    }
+                    root.dragEnded();
                     drop.accept();
                 }
             }
@@ -142,7 +230,9 @@ Rectangle {
                 anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 source: Colors.tint(row.iconSource,
-                                    row.current ? Colors.selectionText : Colors.textDim)
+                                    row.current ? Colors.selectionText
+                                    : row.placeholder && rowDrop.containsDrag ? Colors.accent
+                                    : Colors.textDim)
                 sourceSize: Qt.size(16, 16)
                 opacity: row.mountable ? 0.6 : 1
             }
@@ -155,7 +245,8 @@ Rectangle {
                 anchors.rightMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.name
-                color: row.current ? Colors.selectionText : row.mountable ? Colors.textDim : Colors.text
+                color: row.current ? Colors.selectionText
+                     : row.mountable || row.placeholder ? Colors.textDim : Colors.text
                 font.pixelSize: 13
                 elide: Text.ElideRight
             }
@@ -186,7 +277,9 @@ Rectangle {
 
                 anchors.fill: parent
                 anchors.rightMargin: row.ejectable ? 24 : 0
-                hoverEnabled: true
+                // The placeholder is a drop target only; a click does nothing.
+                enabled: !row.placeholder
+                hoverEnabled: !row.placeholder
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                 onClicked: mouse => {
                     if (mouse.button === Qt.RightButton) {

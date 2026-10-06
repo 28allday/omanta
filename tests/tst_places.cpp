@@ -3,6 +3,7 @@
 
 #include <gio/gio.h>
 
+#include <QElapsedTimer>
 #include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -30,6 +31,8 @@ private Q_SLOTS:
     void addBookmarkRefusesDuplicates();
     void removeBookmarkKeepsTheOthersAndTheirLabels();
     void bookmarkWritesRefreshTheModel();
+    void bookmarkDropTargetAddsAPlaceholderRow();
+    void bookmarkableKeepsOnlyNewFolders();
 
 private:
     QString writeBookmarks(const QString &content);
@@ -273,6 +276,87 @@ void TestPlaces::bookmarkWritesRefreshTheModel()
     QVERIFY(spy.wait(5000));
     QCOMPARE(namesInSection(model, QStringLiteral("Bookmarks")),
              QStringList({ QStringLiteral("Scratch") }));
+}
+
+void TestPlaces::bookmarkDropTargetAddsAPlaceholderRow()
+{
+    writeBookmarks(QStringLiteral("file:///tmp Scratch\n"));
+    PlacesModel model;
+    const auto placeholderRows = [&model] {
+        int rows = 0;
+        for (int row = 0; row < model.rowCount(); ++row) {
+            if (model.data(model.index(row, 0), PlacesModel::PlaceholderRole).toBool())
+                ++rows;
+        }
+        return rows;
+    };
+    QCOMPARE(placeholderRows(), 0);
+
+    // The row lands at the end of the Bookmarks section, in that section, with
+    // nowhere to go — it is a drop target, not a place.
+    model.setBookmarkDropTarget(true);
+    QCOMPARE(namesInSection(model, QStringLiteral("Bookmarks")),
+             QStringList({ QStringLiteral("Scratch"), QStringLiteral("New Bookmark") }));
+    QCOMPARE(placeholderRows(), 1);
+    const int row = int(namesInSection(model, QStringLiteral("Places")).size()) + 1;
+    QCOMPARE(model.data(model.index(row, 0), PlacesModel::NameRole).toString(),
+             QStringLiteral("New Bookmark"));
+    QVERIFY(model.data(model.index(row, 0), PlacesModel::LocationRole).toString().isEmpty());
+    QCOMPARE(model.rowForLocation(QString()), -1);
+
+    // A bookmark added while the drag hovers keeps the placeholder last.
+    QSignalSpy spy(&model, &PlacesModel::countChanged);
+    model.addBookmark(QStringLiteral("/var/log"));
+    QVERIFY(spy.wait(5000));
+    QCOMPARE(namesInSection(model, QStringLiteral("Bookmarks")),
+             QStringList({ QStringLiteral("Scratch"), QStringLiteral("log"),
+                           QStringLiteral("New Bookmark") }));
+
+    model.setBookmarkDropTarget(false);
+    QCOMPARE(placeholderRows(), 0);
+    QCOMPARE(namesInSection(model, QStringLiteral("Bookmarks")),
+             QStringList({ QStringLiteral("Scratch"), QStringLiteral("log") }));
+
+    // With no bookmarks at all the placeholder still gets a section of its own.
+    writeBookmarks(QString());
+    QVERIFY(spy.wait(5000));
+    QVERIFY(namesInSection(model, QStringLiteral("Bookmarks")).isEmpty());
+    model.setBookmarkDropTarget(true);
+    QCOMPARE(namesInSection(model, QStringLiteral("Bookmarks")),
+             QStringList({ QStringLiteral("New Bookmark") }));
+}
+
+void TestPlaces::bookmarkableKeepsOnlyNewFolders()
+{
+    writeBookmarks(QStringLiteral("file:///tmp Scratch\n"));
+    QTemporaryDir tree;
+    QVERIFY(tree.isValid());
+    const QString folder = tree.filePath(QStringLiteral("album"));
+    QVERIFY(QDir().mkpath(folder));
+    const QString file = tree.filePath(QStringLiteral("photo.jpg"));
+    {
+        QFile out(file);
+        QVERIFY(out.open(QIODevice::WriteOnly));
+        out.write("x");
+    }
+    PlacesModel model;
+
+    // Files, folders already bookmarked (however spelled), missing paths and
+    // repeats all drop out; folders that would be new bookmarks stay, in order.
+    QCOMPARE(model.bookmarkable({ file, QStringLiteral("/tmp"), QStringLiteral("file:///tmp"),
+                                  tree.filePath(QStringLiteral("missing")), folder, folder,
+                                  QString(), tree.path() }),
+             QStringList({ folder, tree.path() }));
+    QVERIFY(model.bookmarkable({ file }).isEmpty());
+    QVERIFY(model.bookmarkable({}).isEmpty());
+
+    // Remote URIs are left alone — and never looked up: an unreachable host
+    // must cost nothing while a drag hovers.
+    QElapsedTimer clock;
+    clock.start();
+    QVERIFY(model.bookmarkable({ QStringLiteral("http://example.invalid/photos/"),
+                                 QStringLiteral("smb://nowhere.invalid/share/") }).isEmpty());
+    QVERIFY(clock.elapsed() < 1000);
 }
 
 QTEST_GUILESS_MAIN(TestPlaces)

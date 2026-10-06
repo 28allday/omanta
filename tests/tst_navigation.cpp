@@ -3,6 +3,7 @@
 #include "TestFixture.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
@@ -344,6 +345,22 @@ void TestNavigation::sameFilesystemAnswersForLocalPaths()
                                      QStringLiteral("/no/such/place/at/all")));
     QVERIFY(!platform.sameFilesystem(QStringLiteral("smb://unreachable/x"),
                                      QDir::homePath()));
+
+    // Different origins are decided from the strings, with no GIO lookup: a
+    // drag from another application may carry any URI, and the question is
+    // asked while it merely hovers. An automounting scheme such as http must
+    // never be contacted for it.
+    QElapsedTimer clock;
+    clock.start();
+    QVERIFY(!platform.sameFilesystem(QStringLiteral("http://example.invalid/a/"),
+                                     QStringLiteral("http://other.invalid/a/")));
+    QVERIFY(!platform.sameFilesystem(QStringLiteral("http://example.invalid/a/"),
+                                     QDir::homePath()));
+    QVERIFY(!platform.sameFilesystem(QStringLiteral("smb://host/share/"),
+                                     QStringLiteral("sftp://host/share/")));
+    QVERIFY(!platform.sameFilesystem(QStringLiteral("smb://host/share/"),
+                                     QStringLiteral("smb://host:4450/share/")));
+    QVERIFY(clock.elapsed() < 1000);
 }
 
 void TestNavigation::templatesListsVisibleFilesSorted()

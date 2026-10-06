@@ -370,34 +370,15 @@ FocusScope {
         }
     }
 
-    // A drop landed. Turns the drag's URLs into locations, applies the
-    // Nautilus modifier convention — Ctrl forces copy, Shift forces move,
-    // unmodified moves within a filesystem and copies across one — and hands
-    // the transfer up. Modifiers are read now, not from the drop event,
-    // because QML drop events do not carry them.
+    // A drop landed. Turns the drag's URLs into locations, asks DragDrop what
+    // the drop means — the same rule the hint showed while it hovered — and
+    // hands the transfer up.
     function requestDrop(urls, destination) {
         const paths = Platform.locationsFromUrls(urls);
-        if (paths.length === 0 || !destination)
+        const action = DragDrop.actionFor(paths, destination);
+        if (action === "")
             return;
-        // A folder cannot be dropped into itself.
-        if (paths.indexOf(destination) >= 0)
-            return;
-
-        const mods = Platform.keyboardModifiers();
-        let isMove;
-        if (mods & Qt.ControlModifier)
-            isMove = false;
-        else if (mods & Qt.ShiftModifier)
-            isMove = true;
-        else
-            isMove = Platform.sameFilesystem(paths[0], destination);
-
-        // Moving things into the folder they are already in is a no-op, not
-        // an operation with a conflict dialog.
-        if (isMove && paths.every(p => Platform.parentPath(p) === destination))
-            return;
-
-        root.transferRequested(paths, destination, isMove);
+        root.transferRequested(paths, destination, action === "move");
     }
 
     // ---- selection --------------------------------------------------------

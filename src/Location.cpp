@@ -49,6 +49,19 @@ bool isLocal(const QString &location)
     return QUrl(location).isLocalFile();
 }
 
+bool sameOrigin(const QString &a, const QString &b)
+{
+    const bool localA = isLocal(a);
+    const bool localB = isLocal(b);
+    if (localA || localB)
+        return localA && localB;
+    const QUrl urlA(a);
+    const QUrl urlB(b);
+    return urlA.scheme().compare(urlB.scheme(), Qt::CaseInsensitive) == 0
+        && urlA.host().compare(urlB.host(), Qt::CaseInsensitive) == 0
+        && urlA.port() == urlB.port();
+}
+
 QString withoutPassword(const QString &location)
 {
     if (!isUri(location))

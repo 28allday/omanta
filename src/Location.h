@@ -21,6 +21,13 @@ bool isUri(const QString &location);
 // that genuinely need a path: terminals, thumbnails, sync stat calls.
 bool isLocal(const QString &location);
 
+// True when two locations could share a filesystem at all: both local, or
+// URIs with the same scheme, host and port. Decided from the strings alone,
+// so a foreign URI (one dragged in from another application, say) is never
+// handed to GIO — which could mean a network round trip for an automounting
+// scheme such as http — just to learn what was already certain.
+bool sameOrigin(const QString &a, const QString &b);
+
 // Canonical form: cleaned absolute path for anything local (file:// included),
 // GIO's normalized URI for the rest. Empty stays empty.
 QString clean(const QString &location);

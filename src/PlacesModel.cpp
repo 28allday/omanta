@@ -145,6 +145,7 @@ QVariant PlacesModel::data(const QModelIndex &index, int role) const
     case SectionRole: return place.section;
     case MountableRole: return place.mountable;
     case EjectableRole: return place.ejectable;
+    case PlaceholderRole: return place.placeholder;
     }
     return {};
 }
@@ -158,6 +159,7 @@ QHash<int, QByteArray> PlacesModel::roleNames() const
         { SectionRole, "section" },
         { MountableRole, "mountable" },
         { EjectableRole, "ejectable" },
+        { PlaceholderRole, "placeholder" },
     };
 }
 
@@ -325,27 +327,62 @@ QList<PlacesModel::Place> PlacesModel::bookmarksSection() const
     QList<Place> places;
 
     QFile file(bookmarksFilePath());
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return places;
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        const QStringList lines = QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'));
+        for (const QString &raw : lines) {
+            const QString line = raw.trimmed();
+            if (line.isEmpty())
+                continue;
 
-    const QStringList lines = QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'));
-    for (const QString &raw : lines) {
-        const QString line = raw.trimmed();
-        if (line.isEmpty())
-            continue;
+            const qsizetype space = line.indexOf(QLatin1Char(' '));
+            const QString uri = space < 0 ? line : line.left(space);
+            const QString label = space < 0 ? QString() : line.mid(space + 1).trimmed();
 
-        const qsizetype space = line.indexOf(QLatin1Char(' '));
-        const QString uri = space < 0 ? line : line.left(space);
-        const QString label = space < 0 ? QString() : line.mid(space + 1).trimmed();
+            const QString location = Location::clean(uri);
+            if (location.isEmpty())
+                continue;
 
-        const QString location = Location::clean(uri);
-        if (location.isEmpty())
-            continue;
+            places.append({ label.isEmpty() ? Location::displayName(location) : label,
+                            location, bookmarkIcon(location), section });
+        }
+    }
 
-        places.append({ label.isEmpty() ? Location::displayName(location) : label,
-                        location, bookmarkIcon(location), section });
+    // The drop row sits after the real bookmarks, so a drag never shifts them
+    // and an empty section still shows where the bookmark will land.
+    if (m_bookmarkDropTarget) {
+        Place placeholder;
+        placeholder.name = tr("New Bookmark");
+        placeholder.icon = QStringLiteral("user-bookmarks");
+        placeholder.section = section;
+        placeholder.placeholder = true;
+        places.append(placeholder);
     }
     return places;
+}
+
+void PlacesModel::setBookmarkDropTarget(bool on)
+{
+    if (m_bookmarkDropTarget == on)
+        return;
+    m_bookmarkDropTarget = on;
+    spliceSection(QStringLiteral("Bookmarks"), bookmarksSection());
+    Q_EMIT bookmarkDropTargetChanged();
+}
+
+QStringList PlacesModel::bookmarkable(const QStringList &locations) const
+{
+    // Local folders only: the drag may come from any application carrying
+    // any URI, and the answer is wanted while it hovers — a remote one is
+    // never stat'ed for it (a remote folder is bookmarked with Ctrl+D from
+    // inside it instead).
+    QStringList folders;
+    for (const QString &location : locations) {
+        if (location.isEmpty() || !Location::isLocal(location) || folders.contains(location))
+            continue;
+        if (QFileInfo(location).isDir() && !isBookmarked(location))
+            folders.append(location);
+    }
+    return folders;
 }
 
 QString PlacesModel::bookmarkIcon(const QString &location) const
