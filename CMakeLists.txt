@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(omanta VERSION 0.1.26 LANGUAGES CXX)
+project(omanta VERSION 0.1.27 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -42,6 +42,8 @@ set(OMANTA_SOURCES
     src/FileProperties.h
     src/FileSortFilterModel.cpp
     src/FileSortFilterModel.h
+    src/FileChooserPortal.cpp
+    src/FileChooserPortal.h
     src/IconImageProvider.cpp
     src/IconImageProvider.h
     src/Location.cpp
@@ -52,6 +54,8 @@ set(OMANTA_SOURCES
     src/NavigationHistory.h
     src/DefaultFileManager.cpp
     src/DefaultFileManager.h
+    src/PickerFilter.cpp
+    src/PickerFilter.h
     src/Platform.cpp
     src/Platform.h
     src/PlacesModel.cpp
@@ -101,6 +105,7 @@ set(OMANTA_QML_FILES
     qml/BatchRenameDialog.qml
     qml/CompressDialog.qml
     qml/FolderPickerDialog.qml
+    qml/FilePicker.qml
     qml/ConfirmDialog.qml
     qml/ConflictDialog.qml
     qml/CredentialDialog.qml
@@ -159,3 +164,14 @@ install(DIRECTORY packaging/actions/ DESTINATION share/omanta/actions FILES_MATC
 install(PROGRAMS packaging/bin/omanta-dropbox-link DESTINATION bin)
 install(PROGRAMS packaging/bin/omanta-switch packaging/bin/omanta-launch
         packaging/bin/omanta-launch-cwd DESTINATION bin)
+
+# The file chooser portal backend: the .portal file tells xdg-desktop-portal
+# omanta can serve FileChooser, the .service file lets D-Bus start it. Neither
+# changes anything until portals.conf names omanta (omanta-switch does that).
+set(OMANTA_BINARY "${CMAKE_INSTALL_PREFIX}/bin/omanta")
+configure_file(packaging/portal/org.freedesktop.impl.portal.desktop.omanta.service.in
+               org.freedesktop.impl.portal.desktop.omanta.service @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.freedesktop.impl.portal.desktop.omanta.service
+        DESTINATION share/dbus-1/services)
+install(FILES packaging/portal/omanta.portal DESTINATION share/xdg-desktop-portal/portals)
+install(FILES packaging/portal/omanta-picker.desktop DESTINATION share/applications)

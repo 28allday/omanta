@@ -32,9 +32,30 @@ Item {
     // without a reload.
     readonly property var listColumns: Settings.listVisibleColumns
 
+    // Name takes what the other columns leave, but never less than this.
+    readonly property real minNameWidth: 200
+
+    // The columns that fit: Name, then the chosen ones in order until the
+    // next would squeeze Name below its minimum. A narrow window (or the
+    // file chooser beside its preview) drops columns from the right rather
+    // than the names.
+    readonly property var shownColumns: {
+        const shown = ["name"];
+        let room = width - 20 - minNameWidth;
+        for (const id of listColumns) {
+            if (id === "name")
+                continue;
+            if (columnMeta[id].width > room)
+                break;
+            shown.push(id);
+            room -= columnMeta[id].width;
+        }
+        return shown;
+    }
+
     readonly property real fixedWidth: {
         let total = 0;
-        for (const id of listColumns)
+        for (const id of shownColumns)
             if (id !== "name")
                 total += columnMeta[id].width;
         return total;
@@ -86,7 +107,7 @@ Item {
                 anchors.rightMargin: 10
 
                 Repeater {
-                    model: root.listColumns
+                    model: root.shownColumns
 
                     delegate: Item {
                         required property string modelData
@@ -95,7 +116,7 @@ Item {
 
                         height: parent.height
                         width: meta.width > 0 ? meta.width
-                                              : root.width - 20 - root.fixedWidth
+                                              : Math.max(0, root.width - 20 - root.fixedWidth)
 
                         Row {
                             anchors.verticalCenter: parent.verticalCenter
@@ -213,9 +234,11 @@ Item {
                     anchors.leftMargin: 10
                     anchors.rightMargin: 10
                     spacing: 0
-                    // Cut and waiting for a paste: dimmed, as in Nautilus.
-                    opacity: Clipboard.revision >= 0 && (Clipboard.isCutPath(row.filePath)
-                             || (row.targetPath !== "" && Clipboard.isCutPath(row.targetPath))) ? 0.5 : 1
+                    // Cut and waiting for a paste: dimmed, as in Nautilus. In
+                    // the file chooser, so is a file the chosen type rules out.
+                    opacity: (Clipboard.revision >= 0 && (Clipboard.isCutPath(row.filePath)
+                              || (row.targetPath !== "" && Clipboard.isCutPath(row.targetPath))) ? 0.5 : 1)
+                             * (root.tab.pickerDims(row.displayName, row.contentType, row.isDir) ? 0.4 : 1)
 
                     Item {
                         id: nameCell
@@ -295,7 +318,7 @@ Item {
                     }
 
                     Repeater {
-                        model: root.listColumns.slice(1) // name renders above
+                        model: root.shownColumns.slice(1) // name renders above
 
                         Text {
                             textFormat: Text.PlainText

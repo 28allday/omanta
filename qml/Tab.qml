@@ -10,6 +10,21 @@ FocusScope {
 
     property string path: ""
     property string pendingSelection: ""
+
+    // Inside the file chooser: opening a file picks it instead of launching
+    // it, the tree view stays off (a picked row must be in the listing it
+    // came from), and rows the chosen file type rules out are dimmed.
+    property bool pickerMode: false
+    property PickerFilter pickerFilter: null
+    // Choosing a folder: files are not listed at all.
+    property bool foldersOnly: false
+    signal fileChosen(string path)
+
+    // The dimming the views apply, one rule for both.
+    function pickerDims(name, contentType, isDir) {
+        return pickerFilter !== null && pickerFilter.revision >= 0
+            && !pickerFilter.matches(name, contentType, isDir);
+    }
     // Non-empty turns the tab into search results for this query under
     // `path`. The window's search bar owns the editing; this is the state.
     property string searchQuery: ""
@@ -24,7 +39,7 @@ FocusScope {
     // Expandable folders (Nautilus's use-tree-view) only make sense over a
     // real directory listing in the list view; everywhere else the flat
     // proxy serves as always.
-    readonly property bool treeActive: viewMode === "list" && Settings.useTreeView
+    readonly property bool treeActive: viewMode === "list" && Settings.useTreeView && !pickerMode
         && searchQuery === "" && !viewingStarred && !viewingNetwork
     // The model the views and every helper below speak to. The two carry the
     // same roles and the same invokable surface, so nothing downstream knows
@@ -180,6 +195,7 @@ FocusScope {
                    : root.viewingStarred ? starredModel
                    : root.viewingNetwork ? networkModel : dirModel
         showHidden: root.showHidden
+        foldersOnly: root.foldersOnly
         sortKey: root.sortKey
         sortDescending: root.sortDescending
         // Nautilus preference, false out of the box: folders sort with the
@@ -316,6 +332,8 @@ FocusScope {
         const target = actionPathAt(row);
         if (files.valueAt(row, "isDir")) {
             navigate(target);
+        } else if (pickerMode) {
+            root.fileChosen(target);
         } else if (Platform.activationExtracts(files.valueAt(row, "contentType"))) {
             // Nautilus 50: opening an archive extracts it, but only when the
             // file manager itself is the type's default handler (post-cutover

@@ -5,6 +5,11 @@ post_install() {
 
 post_upgrade() {
   post_install
+  # The file chooser arrived in 0.1.27; omanta-switch runs per user, so
+  # point anyone upgrading past it at the one command that turns it on.
+  if [ "$(vercmp "$2" 0.1.27)" -lt 0 ]; then
+    echo "omanta can now be your Open/Save dialog: run 'omanta-switch omanta' to turn it on."
+  fi
 }
 
 post_remove() {

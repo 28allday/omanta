@@ -59,6 +59,11 @@ Omarchy theme.
   included, plus Dropbox share links if you use Dropbox)
 - Multi-window single instance, `org.freedesktop.FileManager1` — "open
   containing folder" from browsers and other apps just works
+- Its own file chooser: when omanta is the default, the Open and Save
+  dialogs of other apps are omanta too — same sidebar, path bar and views,
+  a preview of the selected file, the app's file types to choose from
+  (files of other types are dimmed), and a Replace question before saving
+  over a file. See [The file chooser](#the-file-chooser)
 
 Completed work from a failed or cancelled copy/move remains undoable when it
 has not replaced existing files. These partial batches cannot be redone.
@@ -71,8 +76,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.26/omanta-0.1.26-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.26-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.27/omanta-0.1.27-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.27-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —
@@ -130,6 +135,48 @@ instead of activating Nautilus when neither is running. One note:
 whichever file manager has windows open keeps that name until its last
 window closes, so close the other one's windows after switching; omanta
 takes the name over on its own once Nautilus exits.
+
+## The file chooser
+
+When omanta is the default (see above), the Open, Save and Select Folder
+dialogs that other apps show are omanta's own. Apps ask the desktop for a
+file through `xdg-desktop-portal`; switching to omanta names omanta as the
+portal's file chooser, and switching back hands it to the GTK one again.
+If you switched to omanta before version 0.1.27, run `omanta-switch omanta`
+once more to turn the file chooser on.
+
+- **Open**: pick a file (or several, when the app allows it) and press
+  Enter, double-click it, or use the Open button. The panel on the right
+  previews the selection; the panel button at the top right hides it. The **Show** menu at the
+  bottom lists the file types the app accepts; files of other types stay
+  visible but dimmed, and cannot be picked.
+- **Save**: the name box at the top is ready to type in, with the name
+  (not the extension) selected. Click a file to reuse its name. Saving
+  over an existing file asks first. The + button makes a new folder.
+- **Select Folder**: only folders are listed. Enter or double-click walks
+  into a folder; the button (or Ctrl+Enter) chooses the selected folder,
+  or the one you are in when nothing is selected.
+- Anywhere: Ctrl+L or typing `/` or `~` starts typing a path, Ctrl+F
+  searches, Ctrl+H shows hidden files, Alt+←/→/↑ go back, forward and up,
+  Escape cancels.
+
+Which apps use it: everything that asks the desktop portal for its
+dialogs, such as Chromium-based browsers, GTK 4 apps and Flatpaks. An app
+that draws its own GTK dialog without asking the portal keeps showing the
+GTK one.
+
+How it is wired, for the curious: the package installs
+`/usr/share/xdg-desktop-portal/portals/omanta.portal` and a D-Bus service
+that starts `omanta --portal` on demand (it lingers a few minutes after the
+last dialog, then exits). `omanta-switch omanta` adds
+`org.freedesktop.impl.portal.FileChooser=omanta` to
+`~/.config/xdg-desktop-portal/hyprland-portals.conf` — creating that file
+as a copy of the system one if you have none — restarts
+`xdg-desktop-portal` so it takes effect, and adds a Hyprland rule that
+floats the picker window, fully opaque so the app behind it never shows
+through. `omanta-switch nautilus` removes the line (or the whole file, if
+omanta created it). `omanta-switch status` shows which file chooser is
+active.
 
 ## Uninstall
 

@@ -16,6 +16,16 @@
 #     starts omanta when no file manager is running. Switching back
 #     removes it and the Nautilus one applies again.
 #
+#   - the file chooser other apps show for Open and Save: xdg-desktop-portal
+#     asks the backend named for org.freedesktop.impl.portal.FileChooser in
+#     ~/.config/xdg-desktop-portal/<desktop>-portals.conf. A file there
+#     replaces the system one for that desktop outright, so when none exists
+#     it starts as a copy of the system one plus omanta's line, and is
+#     deleted again on the way back; an existing one of yours just gains
+#     (and later loses) the line. The portal is restarted to read it.
+#     Skipped when omanta's .portal file is not installed (the package
+#     installs it; a user-local dev install cannot).
+#
 # While a file manager is running, org.freedesktop.FileManager1 belongs
 # to whichever one claimed it first; omanta declines it when Nautilus
 # owns it and takes it over once Nautilus exits. Switching therefore
@@ -37,6 +47,10 @@ CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 BINDINGS_FILE="$CONFIG_HOME/hypr/bindings.lua"
 DBUS_SERVICE_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/org.freedesktop.FileManager1.service"
 MENU_FILE="$CONFIG_HOME/omarchy/extensions/omarchy-menu.jsonc"
+PORTAL_FILE="${OMANTA_PORTAL_FILE:-/usr/share/xdg-desktop-portal/portals/omanta.portal}"
+PORTAL_LINE="org.freedesktop.impl.portal.FileChooser=omanta"
+PORTAL_MARK="# omanta-switch: omanta's file chooser; \`omanta-switch nautilus\` removes this"
+PORTAL_CREATED="# Written by omanta-switch; \`omanta-switch nautilus\` removes it."
 BLOCK_BEGIN="-- >>> omanta-switch managed block, do not edit by hand"
 BLOCK_END="-- <<< omanta-switch managed block"
 MENU_BEGIN="// >>> omanta-switch managed block, do not edit by hand"
@@ -74,6 +88,10 @@ hl.unbind("SUPER + SHIFT + F")
 hl.unbind("SUPER + ALT + SHIFT + F")
 o.bind("SUPER + SHIFT + F", "File manager", "omanta-launch")
 o.bind("SUPER + ALT + SHIFT + F", "File manager (cwd)", "omanta-launch-cwd")
+o.window("^omanta-picker$", {
+  float = true, center = true,
+  tag = "-default-opacity", opacity = "1 override 1 override 1 override",
+})
 $BLOCK_END
 EOF
 }
@@ -150,6 +168,67 @@ reload_dbus() {
         org.freedesktop.DBus ReloadConfig >/dev/null 2>&1 || true
 }
 
+portal_conf() {
+    # Lower-cased first entry of XDG_CURRENT_DESKTOP: "Hyprland" reads
+    # hyprland-portals.conf.
+    local desktop="${XDG_CURRENT_DESKTOP:-hyprland}"
+    desktop="${desktop%%:*}"
+    echo "$CONFIG_HOME/xdg-desktop-portal/${desktop,,}-portals.conf"
+}
+
+restart_portal() {
+    # The frontend reads portals.conf once, at start.
+    systemctl --user try-restart xdg-desktop-portal.service >/dev/null 2>&1 || true
+}
+
+remove_portal_config() {
+    local conf tmp
+    conf="$(portal_conf)"
+    [ -f "$conf" ] || return 0
+    if head -n 1 "$conf" | grep -qxF -- "$PORTAL_CREATED"; then
+        rm -f "$conf"
+        return 0
+    fi
+    grep -qxF -- "$PORTAL_MARK" "$conf" || return 0
+    tmp="$(mktemp)"
+    awk -v mark="$PORTAL_MARK" -v line="$PORTAL_LINE" '
+        $0 == mark { skip = 1; next }
+        skip && $0 == line { skip = 0; next }
+        { skip = 0; print }
+    ' "$conf" > "$tmp"
+    mv "$tmp" "$conf"
+}
+
+add_portal_config() {
+    if [ ! -f "$PORTAL_FILE" ]; then
+        echo "File chooser: unchanged — omanta's portal file is not installed (the package installs it)"
+        return 1
+    fi
+    local conf base="" candidate name tmp
+    conf="$(portal_conf)"
+    name="$(basename "$conf")"
+    remove_portal_config
+    if [ ! -f "$conf" ]; then
+        mkdir -p "$(dirname "$conf")"
+        for candidate in /etc/xdg/xdg-desktop-portal/"$name" /usr/share/xdg-desktop-portal/"$name"; do
+            [ -f "$candidate" ] && { base="$candidate"; break; }
+        done
+        { echo "$PORTAL_CREATED"
+          if [ -n "$base" ]; then cat "$base"; else printf '[preferred]\ndefault=gtk\n'; fi
+        } > "$conf"
+    fi
+    if grep -qx '\[preferred\]' "$conf"; then
+        tmp="$(mktemp)"
+        awk -v mark="$PORTAL_MARK" -v line="$PORTAL_LINE" '
+            { print }
+            $0 == "[preferred]" && !done { print mark; print line; done = 1 }
+        ' "$conf" > "$tmp"
+        mv "$tmp" "$conf"
+    else
+        printf '\n[preferred]\n%s\n%s\n' "$PORTAL_MARK" "$PORTAL_LINE" >> "$conf"
+    fi
+}
+
 reload_hyprland() {
     [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && hyprctl reload >/dev/null 2>&1 || true
 }
@@ -209,8 +288,12 @@ switch_to_omanta() {
     apply_defaults "$OMANTA_DESKTOP"
     add_bindings_block
     add_dbus_service
+    local picker=0
+    add_portal_config && picker=1
+    restart_portal
     reload_hyprland
     echo "Default file manager: omanta"
+    [ "$picker" = 1 ] && echo "Open and Save dialogs in other apps now use omanta's file chooser."
     echo "SUPER+SHIFT+F now launches omanta. Close any open Nautilus windows"
     echo "so omanta can take over \"show in folder\" (org.freedesktop.FileManager1)."
 }
@@ -219,6 +302,8 @@ switch_to_nautilus() {
     apply_defaults "$NAUTILUS_DESKTOP"
     remove_bindings_block
     remove_dbus_service
+    remove_portal_config
+    restart_portal
     reload_hyprland
     echo "Default file manager: Nautilus (stock Omarchy state restored)"
     echo "Close any open omanta windows so Nautilus can claim"
@@ -243,6 +328,15 @@ status() {
         echo "FileManager1 activation : omanta (user .service file)"
     else
         echo "FileManager1 activation : stock (Nautilus)"
+    fi
+    local conf
+    conf="$(portal_conf)"
+    if [ -f "$conf" ] && grep -qxF -- "$PORTAL_LINE" "$conf"; then
+        echo "File chooser            : omanta ($conf)"
+    elif [ -f "$PORTAL_FILE" ]; then
+        echo "File chooser            : stock (GTK)"
+    else
+        echo "File chooser            : stock (omanta's portal file not installed)"
     fi
     if command -v gdbus >/dev/null; then
         owner="$(gdbus call --session --dest org.freedesktop.DBus \

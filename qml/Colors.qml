@@ -15,7 +15,10 @@ QtObject {
     // The two big surfaces carry the background-opacity preference, the way a
     // terminal's background_opacity works: the backdrop goes translucent while
     // text, icons and controls stay fully opaque.
-    readonly property real surfaceAlpha: Settings.backgroundOpacity
+    // The file chooser sets this: it floats over another app's window, whose
+    // content must not show through the list.
+    property bool solid: false
+    readonly property real surfaceAlpha: solid ? 1 : Settings.backgroundOpacity
     readonly property color window: Qt.alpha(themed ? Theme.windowColor : (dark ? "#101010" : "#fbfbfb"), surfaceAlpha)
     readonly property color chrome: Qt.alpha(themed ? Theme.chromeColor : (dark ? "#161616" : "#f0f0f0"), surfaceAlpha)
     readonly property color border: themed ? Theme.borderColor : (dark ? "#2a2a2a" : "#dcdcdc")

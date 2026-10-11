@@ -26,11 +26,21 @@ private Q_SLOTS:
     void switchesTheDefaultBothWays();
     void activationFallsBackWhenOmantaIsGone();
     void unavailableWithoutTheScript();
+    void switchesTheFileChooserBothWays();
+    void keepsAPortalsConfOfYourOwn();
+    void leavesTheFileChooserWithoutThePortalFile();
 
 private:
     static bool settle(DefaultFileManager &manager);
     QString menuFile() const { return m_home->filePath("config/omarchy/extensions/omarchy-menu.jsonc"); }
     QString bindingsFile() const { return m_home->filePath("config/hypr/bindings.lua"); }
+    QString portalFile() const { return m_home->filePath("omanta.portal"); }
+    QString portalsConf() const { return m_home->filePath("config/xdg-desktop-portal/omantatest-portals.conf"); }
+    QByteArray readAll(const QString &path) const
+    {
+        QFile file(path);
+        return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+    }
     QString serviceFile() const { return m_home->filePath("data/dbus-1/services/org.freedesktop.FileManager1.service"); }
     // Stubs on PATH; the quote and space prove the Exec= line's quoting.
     QString stubDir() const { return m_home->filePath("bin it's"); }
@@ -87,10 +97,11 @@ void TestSwitcher::init()
     }
     // The D-Bus activation file names the omanta binary; the script looks
     // beside itself, then on PATH, and a dev checkout has it in neither.
-    // nautilus and busctl are stubbed too, so neither the fallback nor the
-    // bus reload can reach the desktop running the tests.
+    // nautilus, busctl, systemctl and hyprctl are stubbed too, so neither the
+    // fallback, the bus reload, the portal restart nor the compositor reload
+    // can reach the desktop running the tests.
     QVERIFY(QDir().mkpath(stubDir()));
-    for (const char *name : { "omanta", "nautilus", "busctl" }) {
+    for (const char *name : { "omanta", "nautilus", "busctl", "systemctl", "hyprctl" }) {
         QFile stub(stubDir() + QLatin1Char('/') + QLatin1String(name));
         QVERIFY(stub.open(QIODevice::WriteOnly));
         stub.write("#!/bin/sh\necho \"" + QByteArray(name) + " $*\" >> \"$STUB_LOG\"\n");
@@ -102,6 +113,15 @@ void TestSwitcher::init()
     qputenv("XDG_DATA_HOME", m_home->filePath("data").toUtf8());
     qputenv("XDG_DATA_DIRS", m_home->filePath("data").toUtf8());
     qputenv("OMANTA_SETTINGS_FILE", m_home->filePath("settings").toUtf8());
+    // The file chooser: a stand-in for the package's .portal file, and a
+    // desktop with no system portals.conf of its own.
+    {
+        QFile portal(portalFile());
+        QVERIFY(portal.open(QIODevice::WriteOnly));
+        portal.write("[portal]\n");
+    }
+    qputenv("OMANTA_PORTAL_FILE", portalFile().toUtf8());
+    qputenv("XDG_CURRENT_DESKTOP", "OmantaTest:Other");
 }
 
 void TestSwitcher::cleanup()
@@ -283,6 +303,75 @@ void TestSwitcher::unavailableWithoutTheScript()
     QVERIFY(!settings.toggleMenuOffered());
     QVERIFY(!QFile::exists(menuFile()));
     qputenv("OMANTA_SWITCH", OMANTA_SWITCH_SCRIPT);
+}
+
+// Open and Save dialogs follow the switch: portals.conf for this desktop
+// names omanta's backend, the portal is restarted to read it, and the picker
+// window floats. With no portals.conf of the person's own, the file is ours
+// and goes again on the way back.
+void TestSwitcher::switchesTheFileChooserBothWays()
+{
+    DefaultFileManager manager;
+    QVERIFY(settle(manager));
+    QFile::remove(stubLog());
+    manager.setDefault(true);
+    QVERIFY(settle(manager));
+    QVERIFY2(manager.isDefault(), qPrintable(manager.lastError()));
+
+    const QByteArray conf = readAll(portalsConf());
+    QVERIFY2(conf.contains("[preferred]\n"), conf.constData());
+    QVERIFY2(conf.contains("\norg.freedesktop.impl.portal.FileChooser=omanta\n"), conf.constData());
+    // No system file for this desktop to start from: everything else stays GTK.
+    QVERIFY2(conf.contains("\ndefault=gtk\n"), conf.constData());
+    QVERIFY(readAll(stubLog()).contains("systemctl --user try-restart xdg-desktop-portal.service"));
+    QVERIFY(readAll(bindingsFile()).contains("o.window(\"^omanta-picker$\""));
+
+    manager.setDefault(false);
+    QVERIFY(settle(manager));
+    QVERIFY(!QFile::exists(portalsConf()));
+    QVERIFY(!readAll(bindingsFile()).contains("omanta-picker"));
+}
+
+void TestSwitcher::keepsAPortalsConfOfYourOwn()
+{
+    QVERIFY(QDir().mkpath(m_home->filePath("config/xdg-desktop-portal")));
+    const QByteArray original = "# mine\n[preferred]\ndefault=hyprland;gtk\n"
+                                "org.freedesktop.impl.portal.Settings=darkman\n";
+    {
+        QFile conf(portalsConf());
+        QVERIFY(conf.open(QIODevice::WriteOnly));
+        conf.write(original);
+    }
+    DefaultFileManager manager;
+    QVERIFY(settle(manager));
+    manager.setDefault(true);
+    QVERIFY(settle(manager));
+    // Switching on twice must not stack a second line.
+    manager.setDefault(true);
+    QVERIFY(settle(manager));
+    const QByteArray conf = readAll(portalsConf());
+    QCOMPARE(conf.count("FileChooser=omanta"), 1);
+    QVERIFY(conf.startsWith("# mine\n[preferred]\n"));
+    QVERIFY(conf.contains("default=hyprland;gtk\n"));
+    QVERIFY(conf.contains("org.freedesktop.impl.portal.Settings=darkman\n"));
+
+    manager.setDefault(false);
+    QVERIFY(settle(manager));
+    QCOMPARE(readAll(portalsConf()), original); // restored byte for byte
+}
+
+void TestSwitcher::leavesTheFileChooserWithoutThePortalFile()
+{
+    // A user-local dev install has no .portal file where the frontend looks;
+    // pointing portals.conf at a backend it cannot find would leave every
+    // app without a file chooser at all.
+    QVERIFY(QFile::remove(portalFile()));
+    DefaultFileManager manager;
+    QVERIFY(settle(manager));
+    manager.setDefault(true);
+    QVERIFY(settle(manager));
+    QVERIFY2(manager.isDefault(), qPrintable(manager.lastError()));
+    QVERIFY(!QFile::exists(portalsConf()));
 }
 
 QTEST_MAIN(TestSwitcher)

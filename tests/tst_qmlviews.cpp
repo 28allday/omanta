@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <memory>
 
 // Stands in for Sushi 50 on the session bus under a private name, so Space
 // can be driven end to end without a preview window ever opening. Like the
@@ -104,6 +105,7 @@ private Q_SLOTS:
     void tabCloseButtonClosesTab();
     void tabTitlesFollowNavigation();
     void dropHintAndSidebarBookmarkDrop();
+    void filePickerAnswers();
 
 private:
     QTemporaryDir m_cache;
@@ -959,6 +961,145 @@ void TestQmlViews::emptyTrashRefreshesOpenViews()
         QCOMPARE(tab->property("statusText").toString(), QStringLiteral("0 items"));
         QCOMPARE(resets.count(), 0);
     }
+}
+
+// The file chooser window as the portal creates it: a request in, exactly
+// one answer out. Dimmed (ruled-out) files cannot be picked; Save offers the
+// suggested name and answers with a path in the folder being viewed.
+static QVariant plain(const QVariant &value)
+{
+    return value.metaType() == QMetaType::fromType<QJSValue>()
+        ? value.value<QJSValue>().toVariant() : value;
+}
+
+static bool dims(QObject *pane, const QString &name, const QString &type)
+{
+    QVariant result;
+    QMetaObject::invokeMethod(pane, "pickerDims", Q_RETURN_ARG(QVariant, result),
+                              Q_ARG(QVariant, name), Q_ARG(QVariant, type), Q_ARG(QVariant, false));
+    return result.toBool();
+}
+
+static QObject *createPicker(QQmlEngine &engine, const QVariantMap &request)
+{
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qt/qml/Omanta/qml/FilePicker.qml")));
+    if (component.isError()) {
+        qWarning() << component.errors();
+        return nullptr;
+    }
+    QObject *window = component.createWithInitialProperties({ { QStringLiteral("request"), request } });
+    if (window)
+        QQmlEngine::setObjectOwnership(window, QQmlEngine::CppOwnership);
+    return window;
+}
+
+void TestQmlViews::filePickerAnswers()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"
+                                            "|ReferenceError|Binding loop"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    const QString image = tree.writeFile("beach.jpg");
+    tree.writeFile("notes.txt");
+    QVERIFY(QDir().mkpath(tree.filePath("scans")));
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+
+    const QVariantList images{ QVariantMap{
+        { "name", "Images" },
+        { "rules", QVariantList{ QVariantMap{ { "type", 0u }, { "pattern", "*.jpg" } } } } } };
+
+    // ---- open: one file, through the Images filter
+    std::unique_ptr<QObject> open(createPicker(engine, {
+        { "mode", "open" }, { "title", "Open Image" }, { "appName", "Test App" },
+        { "filters", images }, { "filterIndex", 0 }, { "folder", tree.path() } }));
+    QVERIFY(open);
+    QCOMPARE(open->property("title").toString(), QStringLiteral("Open Image — Test App"));
+    auto *pane = open->findChild<QQuickItem *>(QStringLiteral("pickerPane"));
+    QVERIFY(pane);
+    QTRY_COMPARE(pane->property("files").value<QObject *>()->property("count").toInt(), 3);
+    QSignalSpy finished(open.get(), SIGNAL(finished(bool,QVariant,int,QVariant)));
+
+    QVERIFY(dims(pane, "notes.txt", "text/plain"));
+    QVERIFY(!dims(pane, "beach.jpg", "image/jpeg"));
+
+    // Every column on, in a list squeezed beside the preview: the names keep
+    // their room and the columns that do not fit drop off the right. The bug
+    // this guards handed Name a negative width and showed no names at all.
+    auto *settings = engine.singletonInstance<Settings *>("Omanta", "Settings");
+    QVERIFY(settings);
+    const QStringList everyColumn{ "name", "size", "type", "owner", "group", "permissions",
+                                   "modified", "created", "accessed" };
+    settings->setListVisibleColumns(everyColumn);
+    QQuickItem *list = nullptr;
+    for (QQuickItem *item : pane->findChildren<QQuickItem *>())
+        if (item->property("shownColumns").isValid())
+            list = item;
+    QVERIFY(list);
+    QTRY_COMPARE(list->property("listColumns").toStringList(), everyColumn);
+    const QStringList shown = plain(list->property("shownColumns")).toStringList();
+    QVERIFY(shown.size() < everyColumn.size());
+    QCOMPARE(shown.first(), QStringLiteral("name"));
+    QCOMPARE(shown, everyColumn.mid(0, shown.size()));
+    QVERIFY(list->width() - 20 - list->property("fixedWidth").toReal()
+            >= list->property("minNameWidth").toReal());
+    QVERIFY(QMetaObject::invokeMethod(pane, "selectOnly", Q_ARG(QVariant, "notes.txt")));
+    QTRY_COMPARE(plain(open->property("selectedRows")).toList().size(), 1);
+    QVERIFY(!open->property("acceptEnabled").toBool()); // ruled out by the filter
+    QVERIFY(QMetaObject::invokeMethod(pane, "selectOnly", Q_ARG(QVariant, "beach.jpg")));
+    QTRY_VERIFY(open->property("acceptEnabled").toBool());
+    QCOMPARE(open->property("acceptText").toString(), QStringLiteral("Open"));
+    QVERIFY(QMetaObject::invokeMethod(open.get(), "accept"));
+    QCOMPARE(finished.count(), 1);
+    QCOMPARE(finished.at(0).at(0).toBool(), true);
+    QCOMPARE(plain(finished.at(0).at(1)).toStringList(), QStringList{ image });
+    QCOMPARE(finished.at(0).at(2).toInt(), 0);
+    // Closing after the answer must not answer again.
+    QVERIFY(QMetaObject::invokeMethod(open.get(), "close"));
+    QCOMPARE(finished.count(), 1);
+
+    // ---- save: the suggested name, in the folder being viewed
+    std::unique_ptr<QObject> save(createPicker(engine, {
+        { "mode", "save" }, { "currentName", "report.pdf" }, { "folder", tree.path() } }));
+    QVERIFY(save);
+    QSignalSpy saved(save.get(), SIGNAL(finished(bool,QVariant,int,QVariant)));
+    QTRY_VERIFY(save->property("acceptEnabled").toBool());
+    QCOMPARE(save->property("acceptText").toString(), QStringLiteral("Save"));
+    QVERIFY(QMetaObject::invokeMethod(save.get(), "accept"));
+    QCOMPARE(saved.count(), 1);
+    QCOMPARE(plain(saved.at(0).at(1)).toStringList(),
+             QStringList{ tree.filePath("report.pdf") });
+
+    // ---- folder: nothing selected answers with the folder being viewed
+    std::unique_ptr<QObject> folder(createPicker(engine, {
+        { "mode", "open" }, { "directory", true }, { "folder", tree.path() } }));
+    QVERIFY(folder);
+    pane = folder->findChild<QQuickItem *>(QStringLiteral("pickerPane"));
+    QTRY_COMPARE(pane->property("files").value<QObject *>()->property("count").toInt(), 1); // files hidden
+    QSignalSpy chosen(folder.get(), SIGNAL(finished(bool,QVariant,int,QVariant)));
+    QVERIFY(QMetaObject::invokeMethod(folder.get(), "accept"));
+    QCOMPARE(chosen.count(), 1);
+    QCOMPARE(plain(chosen.at(0).at(1)).toStringList(), QStringList{ tree.path() });
+
+    // ---- cancel by closing the window
+    std::unique_ptr<QObject> dismissed(createPicker(engine, { { "mode", "open" }, { "folder", tree.path() } }));
+    QVERIFY(dismissed);
+    QSignalSpy cancelled(dismissed.get(), SIGNAL(finished(bool,QVariant,int,QVariant)));
+    QVERIFY(QMetaObject::invokeMethod(dismissed.get(), "close"));
+    QCOMPARE(cancelled.count(), 1);
+    QCOMPARE(cancelled.at(0).at(0).toBool(), false);
 }
 
 QTEST_MAIN(TestQmlViews)

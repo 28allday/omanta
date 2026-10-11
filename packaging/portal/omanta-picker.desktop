@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+# The file chooser omanta shows inside other apps' Open and Save dialogs
+# (`omanta --portal`). Never launched from a menu; it exists so the picker's
+# windows have a name and an icon, and so the portal recognises the app id.
+Name=File Chooser
+Comment=Pick files for other applications
+Exec=omanta --portal
+Icon=omanta
+Terminal=false
+NoDisplay=true
+StartupWMClass=omanta-picker

@@ -15,6 +15,10 @@ Rectangle {
     // The window's Mounter — volumes that need credentials ask through it.
     property Mounter mounter: null
 
+    // In the file chooser: places to pick from, nothing more — no Trash, no
+    // drops, no row menu, no operations indicator.
+    property bool picker: false
+
     signal navigateRequested(string location)
     signal mountError(string name, string message)
     // Files were dropped on a row; the window decides what that means
@@ -107,6 +111,7 @@ Rectangle {
         id: backdrop
 
         anchors.fill: list
+        enabled: !root.picker
         onEntered: drag => root.dragArrived(drag)
         onExited: root.dragLeft()
         onDropped: drop => {
@@ -166,15 +171,17 @@ Rectangle {
             // else with a location can take a drop — dropping on Starred
             // stars, on Trash trashes, elsewhere transfers (Nautilus's rules).
             // The New Bookmark placeholder exists only to be dropped on.
-            readonly property bool droppable: placeholder
+            readonly property bool droppable: !root.picker
+                                              && (placeholder
                                               || (location !== ""
                                                   && location !== "recent:///"
-                                                  && location !== "network:///")
+                                                  && location !== "network:///"))
 
             // ListView places its delegates at x 0 and ignores a delegate's
             // own x, so the 6px inset on each side lives on the view instead.
             width: list.width
-            height: 30
+            visible: !(root.picker && location === "trash:///")
+            height: visible ? 30 : 0
             radius: Colors.radius
             color: current ? Colors.selection
                  : rowDrop.containsDrag ? Colors.hover
@@ -283,11 +290,13 @@ Rectangle {
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                 onClicked: mouse => {
                     if (mouse.button === Qt.RightButton) {
+                        if (root.picker)
+                            return;
                         rowMenu.rowLocation = row.location;
                         rowMenu.rowSection = row.section;
                         rowMenu.popup();
                     } else if (mouse.button === Qt.MiddleButton) {
-                        if (row.location !== "" && row.location !== "network:///")
+                        if (!root.picker && row.location !== "" && row.location !== "network:///")
                             root.openInNewTabRequested(row.location);
                     } else if (row.location !== "") {
                         root.navigateRequested(row.location);
@@ -325,7 +334,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.rightMargin: 1 // stay clear of the separating hairline
-        visible: hasOps || linger || opsPopover.visible
+        visible: !root.picker && (hasOps || linger || opsPopover.visible)
         height: visible ? opsColumn.height + 14 : 0
 
         Timer {

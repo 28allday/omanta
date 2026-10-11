@@ -137,9 +137,11 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 6
                 width: parent.width - 12
-                // Cut and waiting for a paste: dimmed, as in Nautilus.
-                opacity: Clipboard.revision >= 0 && (Clipboard.isCutPath(cell.filePath)
-                         || (cell.targetPath !== "" && Clipboard.isCutPath(cell.targetPath))) ? 0.5 : 1
+                // Cut and waiting for a paste: dimmed, as in Nautilus. In the
+                // file chooser, so is a file the chosen type rules out.
+                opacity: (Clipboard.revision >= 0 && (Clipboard.isCutPath(cell.filePath)
+                          || (cell.targetPath !== "" && Clipboard.isCutPath(cell.targetPath))) ? 0.5 : 1)
+                         * (root.tab.pickerDims(cell.displayName, cell.contentType, cell.isDir) ? 0.4 : 1)
 
                 Image {
                     id: preview

@@ -6,6 +6,7 @@
 
 #include "Application.h"
 #include "DBusAdaptors.h"
+#include "FileChooserPortal.h"
 #include "IconImageProvider.h"
 #include "Platform.h"
 #include "SystemTheme.h"
@@ -68,6 +69,68 @@ bool forwardToRunningInstance(const QStringList &paths, bool newWindow, const QS
     return true;
 }
 
+// `omanta --portal`: the file chooser backend, started by D-Bus when an app
+// asks xdg-desktop-portal for an Open or Save dialog. Its own process, not a
+// mode of the browser instance: a picker must come up whether or not a
+// browser window is open, a crash in it must not take the user's windows
+// down, and it gets its own app id so the compositor can float it.
+int runPortal(QGuiApplication &app)
+{
+    app.setDesktopFileName(QStringLiteral("omanta-picker"));
+    QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
+    FileChooserPortal::registerTypes();
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider(QStringLiteral("fileicon"), new IconImageProvider);
+    engine.addImageProvider(QStringLiteral("thumbnail"), new ThumbnailProvider);
+
+    Application application(&engine);
+    Platform platform;
+    SystemTheme systemTheme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &systemTheme);
+
+    // Opaque whatever the background-opacity preference: the picker sits on
+    // top of the app that asked, and that app's text would show through.
+    if (QObject *colors = engine.singletonInstance<QObject *>("Omanta", "Colors"))
+        colors->setProperty("solid", true);
+
+    FileChooserPortal portal(&engine);
+    QDBusConnection session = QDBusConnection::sessionBus();
+    // The object first, so the call that activated us finds it the moment
+    // the name is ours.
+    if (!session.registerVirtualObject(QLatin1String(FileChooserPortal::ObjectPath), &portal,
+                                       QDBusConnection::SubPath)) {
+        std::fprintf(stderr, "omanta: could not export the file chooser\n");
+        return 1;
+    }
+    if (!session.registerService(QLatin1String(FileChooserPortal::ServiceName))) {
+        // Another picker process already serves; nothing for this one to do.
+        return 0;
+    }
+
+    // Stay warm a while after the last dialog — the next one opens without a
+    // process start — then go, so an idle desktop does not carry us.
+    using namespace std::chrono_literals;
+    QTimer linger;
+    linger.setSingleShot(true);
+    linger.setInterval(qEnvironmentVariableIsSet("OMANTA_PORTAL_LINGER_MS")
+                           ? std::chrono::milliseconds(qEnvironmentVariableIntValue("OMANTA_PORTAL_LINGER_MS"))
+                           : std::chrono::milliseconds(5min));
+    QObject::connect(&linger, &QTimer::timeout, &app, [&portal] {
+        if (portal.pendingCount() == 0)
+            QGuiApplication::quit();
+    });
+    QObject::connect(&portal, &FileChooserPortal::idle, &linger, qOverload<>(&QTimer::start));
+    linger.start();
+
+    // Picker windows close themselves; the last one closing must not end the
+    // process while it lingers for the next request.
+    app.setQuitOnLastWindowClosed(false);
+    return app.exec();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -82,7 +145,7 @@ int main(int argc, char *argv[])
     app.setApplicationDisplayName(QStringLiteral("Files"));
     app.setOrganizationDomain(QStringLiteral("omarchy.org"));
     app.setDesktopFileName(QStringLiteral("omanta"));
-    app.setApplicationVersion(QStringLiteral("0.1.26"));
+    app.setApplicationVersion(QStringLiteral("0.1.27"));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Browse files."));
@@ -102,10 +165,17 @@ int main(int argc, char *argv[])
     parser.addOption(newWindowOption);
     parser.addOption(selectOption);
     parser.addOption(serviceOption);
+    QCommandLineOption portalOption(QStringLiteral("portal"),
+                                    QStringLiteral("Serve the file chooser portal "
+                                                   "(started by D-Bus for xdg-desktop-portal)."));
+    parser.addOption(portalOption);
     parser.addPositionalArgument(QStringLiteral("paths"),
                                  QStringLiteral("Folders or files to open."),
                                  QStringLiteral("[paths...]"));
     parser.process(app);
+
+    if (parser.isSet(portalOption))
+        return runPortal(app);
 
     QStringList paths;
     for (const QString &argument : parser.positionalArguments()) {

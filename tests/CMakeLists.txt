@@ -171,3 +171,7 @@ omanta_test(tst_mounter
     ${CMAKE_SOURCE_DIR}/src/Mounter.cpp
     ${CMAKE_SOURCE_DIR}/src/Location.cpp
 )
+
+omanta_test(tst_picker
+    ${CMAKE_SOURCE_DIR}/src/PickerFilter.cpp
+)

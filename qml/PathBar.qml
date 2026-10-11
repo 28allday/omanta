@@ -10,6 +10,8 @@ FocusScope {
 
     property string path: ""
     property bool editing: false
+    // The file chooser has no folder actions to offer.
+    property bool showMenu: true
 
     signal navigateRequested(string target)
     // The kebab at the pill's right end — current-folder actions.
@@ -33,6 +35,15 @@ FocusScope {
         editing = true;
         editor.text = root.path;
         editor.selectAll();
+        editor.forceActiveFocus();
+    }
+
+    // The file chooser's "start typing a path": "/" or "~" in the file list
+    // opens the editor holding just that, cursor after it.
+    function beginTyping(text) {
+        editing = true;
+        editor.text = text;
+        editor.cursorPosition = text.length;
         editor.forceActiveFocus();
     }
 
@@ -170,7 +181,7 @@ FocusScope {
         width: 22
         height: 24
         radius: 4
-        visible: !root.editing
+        visible: !root.editing && root.showMenu
         color: kebabMouse.containsMouse ? Colors.hover : "transparent"
 
         // Three drawn dots rather than "\u22ee": the font glyph's dots snap
