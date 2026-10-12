@@ -1957,6 +1957,14 @@ Window {
         }
 
         MenuItem {
+            // The selection's paths as plain text, one per line — the
+            // per-file twin of the path bar's Copy Location.
+            text: qsTr("Copy Path")
+            enabled: root.currentTab && root.currentTab.selectionCount > 0
+            onTriggered: Clipboard.copyText(root.selection().join("\n"))
+        }
+
+        MenuItem {
             text: qsTr("Paste")
             enabled: Clipboard.hasFiles && root.viewWritable
             onTriggered: root.paste()
