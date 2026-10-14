@@ -87,6 +87,14 @@ public:
     bool bookmarkDropTarget() const { return m_bookmarkDropTarget; }
     void setBookmarkDropTarget(bool on);
 
+    // Reordering, as the sidebar's drag does it: moveBookmark shifts one
+    // Bookmarks row in the model only, so the drag previews every step, and
+    // saveBookmarkOrder writes the order shown back to the GTK file, each
+    // line (label and all) intact. Neither touches the "New Bookmark"
+    // placeholder: it is not a bookmark and has no line in the file.
+    Q_INVOKABLE void moveBookmark(int from, int to);
+    Q_INVOKABLE void saveBookmarkOrder();
+
 Q_SIGNALS:
     void countChanged();
     void mounterChanged();

@@ -48,6 +48,11 @@ Omarchy theme.
   type, or "Other Application…" to choose one and set the default
 - Move to… and Copy to… in the right-click menu: pick a destination folder
   and the selection goes there, with the same name-clash dialog as paste
+- Copy Path in the right-click menu: the selected files' full paths as text,
+  one per line
+- Reorder bookmarks: hold a bookmark until it fills, then drag it into place
+  (or right-click → Reorder Bookmarks); Escape or a click elsewhere finishes.
+  The hold time is in Preferences → Sidebar
 - New Folder from the + button beside search, Ctrl+Shift+N, or right-click
 - Search: recursive filename plus full-text (via `localsearch`), date and
   type filters
@@ -56,7 +61,9 @@ Omarchy theme.
   light/dark
 - Custom context-menu actions from simple TOML files — no extension API
   needed (Omarchy's transcode/LocalSend/Omarchy-Send menu items ship
-  included, plus Dropbox share links if you use Dropbox)
+  included, plus Dropbox share links if you use Dropbox). An action can
+  declare a setting that shows up in Preferences, and any action can be
+  switched off there — see `examples/actions/` for one
 - Multi-window single instance, `org.freedesktop.FileManager1` — "open
   containing folder" from browsers and other apps just works
 - Its own file chooser: when omanta is the default, the Open and Save
@@ -76,8 +83,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.27/omanta-0.1.27-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.27-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.28/omanta-0.1.28-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.28-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —

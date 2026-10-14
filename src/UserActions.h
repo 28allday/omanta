@@ -24,6 +24,17 @@ class QFileSystemWatcher;
 //   extensions = [".heic"]                # eligible when the mimetype misses
 //   directories = false                   # folders eligible? default true
 //   under = ["~/Dropbox"]                 # eligible only inside these folders
+//   option = "codec"                      # one choice, shown in Preferences
+//   option_label = "Audio Codec"          # its Preferences label
+//   option_choices = ["pcm16=PCM 16-bit", "mp3=MP3"]   # value=label; first is default
+//
+// The chosen value reaches the command as OMANTA_OPTION_<OPTION> (here
+// OMANTA_OPTION_CODEC=pcm16), set with env(1) in the command itself so it
+// survives the terminal wrapper. Older omanta ignores the option keys and
+// sets nothing, so a script should treat the variable as optional.
+//
+// Every installed action can also be hidden from the menu in Preferences
+// (Settings::hiddenActions — the menu filters, this class does not).
 //
 // Actions see local paths only — a trash:// or smb:// selection is not
 // something `omarchy-send` can take on argv.
@@ -41,12 +52,21 @@ public:
     Q_INVOKABLE QVariantList actionsFor(const QStringList &paths) const;
 
     // Run action `id` on the eligible subset of `paths`, detached.
-    Q_INVOKABLE void run(const QString &id, const QStringList &paths);
+    // `optionValue` is the user's choice for the action's option, if any;
+    // anything not among its choices means the default.
+    Q_INVOKABLE void run(const QString &id, const QStringList &paths,
+                         const QString &optionValue = {});
+
+    // Every available action, for Preferences, by name: [{id, name,
+    // optionLabel, optionValues, optionLabels, optionDefault}]; the option
+    // fields are empty for an action without one.
+    Q_INVOKABLE QVariantList installedActions() const;
 
     // The exact invocation run() would make: argv for a plain action, or
     // [wrapper, shell-string] for a terminal one; one entry per process.
     // Public so the tests assert on commands instead of side effects.
-    QList<QStringList> invocationsFor(const QString &id, const QStringList &paths) const;
+    QList<QStringList> invocationsFor(const QString &id, const QStringList &paths,
+                                      const QString &optionValue = {}) const;
 
     Q_INVOKABLE void reload();
 
@@ -63,6 +83,10 @@ private:
         QStringList mimetypes;
         QStringList extensions;
         QStringList under; // eligible only for paths inside these roots
+        QString option;    // env-safe name; empty = no option
+        QString optionLabel;
+        QStringList optionValues; // parallel; [0] is the default
+        QStringList optionLabels;
         bool each = false;
         bool terminal = false;
         bool directories = true;

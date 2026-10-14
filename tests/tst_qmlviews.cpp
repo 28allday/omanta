@@ -12,6 +12,7 @@
 #include "ThumbnailProvider.h"
 #include "TestFixture.h"
 
+#include <QClipboard>
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDragEnterEvent>
@@ -99,12 +100,15 @@ private Q_SLOTS:
     void emptyTrashRefreshesOpenViews();
     void pasteKeepsCopiedFilesOnClipboard();
     void moveAndCopyToPickedFolder();
+    void copyPathPutsSelectionOnClipboard();
     void thumbnailsFollowInPlaceEdits();
     void dragPreviewSurvivesItsOwner();
     void spacePreviewsInSushi();
     void tabCloseButtonClosesTab();
     void tabTitlesFollowNavigation();
     void dropHintAndSidebarBookmarkDrop();
+    void bookmarksReorderByHolding();
+    void pickerBookmarksDoNotReorder();
     void filePickerAnswers();
 
 private:
@@ -1272,6 +1276,88 @@ void TestQmlViews::moveAndCopyToPickedFolder()
     QTRY_VERIFY(!operations->property("busy").toBool());
 }
 
+// "Copy Path": the selected items' paths as plain text, one per line,
+// in the order the view shows them.
+void TestQmlViews::copyPathPutsSelectionOnClipboard()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    const QString first = tree.writeFile("source/a file.txt");
+    const QString second = tree.writeFile("source/b.txt");
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.filePath("source"));
+    QObject *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = child;
+            break;
+        }
+    }
+    QVERIFY(window);
+    auto *tab = qobject_cast<QQuickItem *>(window->property("currentTab").value<QObject *>());
+    QVERIFY(tab);
+    QTRY_VERIFY(findFileRow(tab, first));
+    QTRY_VERIFY(findFileRow(tab, second));
+
+    QObject *menu = nullptr;
+    for (QObject *child : window->findChildren<QObject *>()) {
+        if (child->objectName() == QLatin1String("contextMenu"))
+            menu = child;
+    }
+    QVERIFY(menu);
+    const auto copyPathEntry = [menu]() -> QQuickItem * {
+        const int count = menu->property("count").toInt();
+        for (int i = 0; i < count; ++i) {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(menu, "itemAt", Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
+            if (item && item->property("text").toString() == QLatin1String("Copy Path"))
+                return item;
+        }
+        return nullptr;
+    };
+    const auto copyPath = [&]() {
+        QVERIFY(QMetaObject::invokeMethod(menu, "popup"));
+        QTRY_VERIFY(menu->property("opened").toBool());
+        QQuickItem *entry = copyPathEntry();
+        QVERIFY(entry);
+        QVERIFY(entry->isEnabled());
+        QVERIFY(QMetaObject::invokeMethod(entry, "click"));
+        QTRY_VERIFY(!menu->property("visible").toBool());
+    };
+
+    QGuiApplication::clipboard()->clear();
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectOnly", Q_ARG(QVariant, QStringLiteral("a file.txt"))));
+    copyPath();
+    QCOMPARE(QGuiApplication::clipboard()->text(), first);
+
+    QVERIFY(QMetaObject::invokeMethod(tab, "selectAll"));
+    copyPath();
+    QCOMPARE(QGuiApplication::clipboard()->text(), first + QLatin1Char('\n') + second);
+
+    // Nothing selected: the entry is there but off.
+    QVERIFY(QMetaObject::invokeMethod(tab, "clearSelection"));
+    QVERIFY(QMetaObject::invokeMethod(menu, "popup"));
+    QTRY_VERIFY(menu->property("opened").toBool());
+    QQuickItem *entry = copyPathEntry();
+    QVERIFY(entry);
+    QVERIFY(!entry->isEnabled());
+    QVERIFY(QMetaObject::invokeMethod(menu, "close"));
+}
+
 void TestQmlViews::thumbnailsFollowInPlaceEdits()
 {
     QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
@@ -1886,6 +1972,159 @@ void TestQmlViews::dropHintAndSidebarBookmarkDrop()
     leave();
     QTRY_VERIFY(!hint->property("active").toBool());
     QCOMPARE(hint->property("text").toString(), QString());
+}
+
+// The sidebar's bookmark rows, top to bottom.
+static QList<QQuickItem *> bookmarkRows(QQuickItem *root)
+{
+    QList<QQuickItem *> rows;
+    collectItems(root, "bookmark", true, rows);
+    std::sort(rows.begin(), rows.end(), [](QQuickItem *a, QQuickItem *b) {
+        return a->property("index").toInt() < b->property("index").toInt();
+    });
+    return rows;
+}
+
+void TestQmlViews::bookmarksReorderByHolding()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    QStringList lines;
+    for (const char *folder : {"one", "two", "three"}) {
+        QVERIFY(QDir().mkpath(tree.filePath(folder)));
+        lines << QUrl::fromLocalFile(tree.filePath(folder)).toString() + QStringLiteral(" ") + folder;
+    }
+    const QString bookmarksFile = config.filePath("OMANTA_BOOKMARKS_FILE");
+    {
+        QFile file(bookmarksFile);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write((lines.join('\n') + '\n').toUtf8());
+    }
+    const auto savedOrder = [&] {
+        QFile file(bookmarksFile);
+        if (!file.open(QIODevice::ReadOnly))
+            return QStringList();
+        QStringList names;
+        for (const QString &line : QString::fromUtf8(file.readAll()).split('\n', Qt::SkipEmptyParts))
+            names << line.section(' ', 1);
+        return names;
+    };
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.path());
+    QQuickWindow *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = qobject_cast<QQuickWindow *>(child);
+            break;
+        }
+    }
+    QVERIFY(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QObject *sidebar = findDialog(window, "Sidebar");
+    QVERIFY(sidebar);
+    const auto reordering = [&] { return sidebar->property("reorderMode").toBool(); };
+    const auto current = [&] { return window->property("currentTab").value<QObject *>(); };
+    QTRY_COMPARE(bookmarkRows(window->contentItem()).size(), 3);
+
+    // A quick click still just opens the bookmark.
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      centreOf(bookmarkRows(window->contentItem()).at(1)));
+    QTRY_COMPARE(current()->property("path").toString(), tree.filePath("two"));
+    QVERIFY(!reordering());
+
+    // Held for the default second: reorder mode, with "one" in hand. Dragged
+    // below "three" and let go, the file takes the new order.
+    const QList<QQuickItem *> rows = bookmarkRows(window->contentItem());
+    const QPoint start = centreOf(rows.at(0));
+    const QPoint end = centreOf(rows.at(2)) + QPoint(0, 4);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, start);
+    QTest::qWait(600);
+    QVERIFY(!reordering());
+    QTRY_VERIFY(reordering());
+    for (int step = 1; step <= 12; ++step) {
+        QTest::mouseMove(window, start + (end - start) * step / 12, 15);
+    }
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, end);
+    QTRY_COMPARE(savedOrder(), (QStringList{"two", "three", "one"}));
+    QVERIFY(reordering());
+    // Holding did not also open the bookmark.
+    QCOMPARE(current()->property("path").toString(), tree.filePath("two"));
+
+    // In reorder mode a click on a bookmark opens nothing; a press on the
+    // files ends the mode and goes no further.
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      centreOf(bookmarkRows(window->contentItem()).at(0)));
+    QTest::qWait(100);
+    QCOMPARE(current()->property("path").toString(), tree.filePath("two"));
+    QVERIFY(reordering());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      QPoint(window->width() - 40, window->height() / 2));
+    QTRY_VERIFY(!reordering());
+
+    // Escape ends it too.
+    QVERIFY(sidebar->setProperty("reorderMode", true));
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_VERIFY(!reordering());
+    QCOMPARE(savedOrder(), (QStringList{"two", "three", "one"}));
+}
+
+// The file picker reuses the sidebar but has nothing that would end reorder
+// mode again, so holding a bookmark there must not start it.
+void TestQmlViews::pickerBookmarksDoNotReorder()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    QVERIFY(QDir().mkpath(tree.filePath("one")));
+    {
+        QFile file(config.filePath("OMANTA_BOOKMARKS_FILE"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write((QUrl::fromLocalFile(tree.filePath("one")).toString() + " one\n").toUtf8());
+    }
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    std::unique_ptr<QObject> picker(createPicker(engine, {
+        { "mode", "open" }, { "title", "Open" }, { "folder", tree.path() } }));
+    auto *window = qobject_cast<QQuickWindow *>(picker.get());
+    QVERIFY(window);
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QObject *sidebar = findDialog(window, "Sidebar");
+    QVERIFY(sidebar);
+    QTRY_COMPARE(bookmarkRows(window->contentItem()).size(), 1);
+
+    const QPoint row = centreOf(bookmarkRows(window->contentItem()).at(0));
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, row);
+    QTest::qWait(1500);
+    QVERIFY(!sidebar->property("reorderMode").toBool());
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, row);
+    QVERIFY(!sidebar->property("reorderMode").toBool());
 }
 
 #include "tst_qmlviews.moc"

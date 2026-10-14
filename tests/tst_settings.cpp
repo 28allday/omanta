@@ -26,6 +26,7 @@ private Q_SLOTS:
     void iconCaptionsAlwaysThreeSlots();
     void backgroundOpacityValidates();
     void iconSizesPersistAndValidate();
+    void bookmarkHoldSnapsAndValidates();
 
 private:
     QTemporaryDir m_dir;
@@ -66,6 +67,7 @@ void TestSettings::defaultsAreNautilus()
     QCOMPARE(settings.defaultViewMode(), QStringLiteral("icon"));
     QCOMPARE(settings.showHiddenFiles(), false);
     QCOMPARE(settings.showSidebar(), true);
+    QCOMPARE(settings.hiddenActions(), QStringList());
 }
 
 void TestSettings::settersPersistAcrossInstances()
@@ -77,6 +79,8 @@ void TestSettings::settersPersistAcrossInstances()
         settings.setDateTimeFormat(QStringLiteral("detailed"));
         settings.setShowHiddenFiles(true);
         settings.setShowSidebar(false);
+        settings.setActionOption(QStringLiteral("resolve-audio"), QStringLiteral("alac"));
+        settings.setHiddenActions({ QStringLiteral("resolve-audio"), QStringLiteral("transcode") });
     }
 
     Settings reread;
@@ -85,6 +89,10 @@ void TestSettings::settersPersistAcrossInstances()
     QCOMPARE(reread.dateTimeFormat(), QStringLiteral("detailed"));
     QCOMPARE(reread.showHiddenFiles(), true);
     QCOMPARE(reread.showSidebar(), false);
+    QCOMPARE(reread.actionOption(QStringLiteral("resolve-audio")), QStringLiteral("alac"));
+    QCOMPARE(reread.actionOption(QStringLiteral("transcode")), QString());
+    QCOMPARE(reread.hiddenActions(),
+             QStringList({ QStringLiteral("resolve-audio"), QStringLiteral("transcode") }));
     // Untouched keys still answer their defaults.
     QCOMPARE(reread.showThumbnails(), QStringLiteral("local-only"));
 }
@@ -248,6 +256,35 @@ void TestSettings::iconSizesPersistAndValidate()
     Settings garbage;
     QCOMPARE(garbage.iconZoom(), 64);
     QCOMPARE(garbage.listZoom(), 18);
+}
+
+void TestSettings::bookmarkHoldSnapsAndValidates()
+{
+    // A second by default; remembered once changed.
+    Settings fresh;
+    QCOMPARE(fresh.bookmarkHoldSeconds(), 1.0);
+
+    fresh.setBookmarkHoldSeconds(1.5);
+    Settings persisted;
+    QCOMPARE(persisted.bookmarkHoldSeconds(), 1.5);
+
+    // Off-step values snap to the nearest half second.
+    write("bookmarkHoldSeconds=1.8\n");
+    Settings snapped;
+    QCOMPARE(snapped.bookmarkHoldSeconds(), 2.0);
+
+    // Outside 0.5–2, or not a number → default.
+    write("bookmarkHoldSeconds=0.2\n");
+    Settings low;
+    QCOMPARE(low.bookmarkHoldSeconds(), 1.0);
+
+    write("bookmarkHoldSeconds=5\n");
+    Settings high;
+    QCOMPARE(high.bookmarkHoldSeconds(), 1.0);
+
+    write("bookmarkHoldSeconds=slow\n");
+    Settings garbage;
+    QCOMPARE(garbage.bookmarkHoldSeconds(), 1.0);
 }
 
 QTEST_GUILESS_MAIN(TestSettings)

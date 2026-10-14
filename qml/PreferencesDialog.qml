@@ -74,6 +74,9 @@ Dialog {
         captionSecond.currentIndex = captionIndex(captions[1]);
         captionThird.currentIndex = captionIndex(captions[2]);
         opacitySlider.value = Settings.backgroundOpacity;
+        holdSlider.value = Settings.bookmarkHoldSeconds;
+        // Reassigning rebuilds the rows, which read their state as they are made.
+        customActions = UserActions.installedActions();
         syncFileManager();
     }
 
@@ -103,6 +106,15 @@ Dialog {
         Settings.iconCaptions = [captionValues[captionFirst.currentIndex],
                                  captionValues[captionSecond.currentIndex],
                                  captionValues[captionThird.currentIndex]];
+    }
+
+    // The TOML actions installed and runnable here, sampled on show.
+    property var customActions: []
+    function setActionShown(id, shown) {
+        const hidden = Settings.hiddenActions.filter(other => other !== id);
+        if (!shown)
+            hidden.push(id);
+        Settings.hiddenActions = hidden;
     }
 
     // The three-way performance policies share one value order.
@@ -284,6 +296,50 @@ Dialog {
                 }
             }
 
+            SectionTitle {
+                visible: root.customActions.length > 0
+                text: qsTr("Custom Actions")
+            }
+            SectionCaption {
+                visible: root.customActions.length > 0
+                text: qsTr("Actions added from ~/.config/omanta/actions. Switch one off to hide it from the menus.")
+            }
+
+            Repeater {
+                model: root.customActions
+
+                // One card per action: its switch, then its option if it has one.
+                delegate: Column {
+                    id: actionCard
+                    required property var modelData
+                    readonly property bool hasOption: modelData.optionValues.length > 0
+                    width: parent.width
+                    spacing: 8
+
+                    PrefRow {
+                        label: actionCard.modelData.name
+                        PrefSwitch {
+                            id: shownSwitch
+                            checked: !Settings.hiddenActions.includes(actionCard.modelData.id)
+                            onToggled: root.setActionShown(actionCard.modelData.id, checked)
+                        }
+                    }
+
+                    PrefRow {
+                        visible: actionCard.hasOption
+                        label: actionCard.modelData.optionLabel
+                        PrefComboBox {
+                            enabled: shownSwitch.checked
+                            model: actionCard.modelData.optionLabels
+                            currentIndex: Math.max(0, actionCard.modelData.optionValues.indexOf(
+                                              Settings.actionOption(actionCard.modelData.id)))
+                            onActivated: Settings.setActionOption(actionCard.modelData.id,
+                                                                  actionCard.modelData.optionValues[currentIndex])
+                        }
+                    }
+                }
+            }
+
             SectionTitle { text: qsTr("Performance") }
             SectionCaption {
                 text: qsTr("These features may cause slowdowns and excess network usage, especially when browsing files outside this device, such as on a remote server.")
@@ -408,6 +464,34 @@ Dialog {
                             font.pixelSize: 11
                         }
                     }
+                }
+            }
+
+            SectionTitle { text: qsTr("Sidebar") }
+            SectionCaption {
+                text: qsTr("Hold a bookmark this long to reorder the bookmarks. Drag them into place, then click anywhere else or press Escape to finish.")
+            }
+
+            PrefRow {
+                label: qsTr("Reorder Hold Time")
+
+                Text {
+                    textFormat: Text.PlainText
+                    text: qsTr("%1 s").arg(holdSlider.value.toFixed(1))
+                    color: Colors.textDim
+                    font.pixelSize: 12
+                }
+
+                Slider {
+                    id: holdSlider
+                    from: 0.5
+                    to: 2.0
+                    stepSize: 0.5
+                    snapMode: Slider.SnapAlways
+                    implicitWidth: root.controlWidth
+                    leftPadding: 0
+                    rightPadding: 0
+                    onMoved: Settings.bookmarkHoldSeconds = value
                 }
             }
 

@@ -1,0 +1,64 @@
+#!/bin/sh
+# Make a video DaVinci Resolve on Linux can hear. Resolve's Linux builds —
+# Studio included — do not decode AAC (or most compressed audio), so the clip
+# imports silent. This writes <name>.resolve.mov beside the original: the
+# video stream copied untouched, the audio rewritten in the codec chosen in
+# omanta's Preferences (16-bit PCM by default), resampled down to 48 kHz when
+# it is above (Resolve's timeline rate; halves the size of 96 kHz screen
+# recordings). The original is never modified.
+#
+#   omanta-resolve-audio <video>...
+#
+# omanta passes the Preferences choice as OMANTA_OPTION_CODEC (see
+# resolve-audio.toml). An omanta without action options sets nothing, and
+# neither does running this by hand: both get the default.
+set -eu
+
+case "${OMANTA_OPTION_CODEC:-}" in
+    pcm24) audio="-c:a pcm_s24le" ;;
+    alac) audio="-c:a alac" ;;
+    mp3) audio="-c:a libmp3lame -b:a 320k" ;;
+    *) audio="-c:a pcm_s16le" ;;
+esac
+
+status=0
+for src in "$@"; do
+    dir=$(dirname -- "$src")
+    base=$(basename -- "$src")
+    out="$dir/${base%.*}.resolve.mov"
+    part="$dir/.${base%.*}.resolve.part.mov"
+
+    codecs=$(ffprobe -v error -select_streams a -show_entries stream=codec_name \
+        -of csv=p=0 -- "$src") || { echo "$base: not a readable video" >&2; status=1; continue; }
+    if [ -z "$codecs" ]; then
+        echo "$base: no audio, nothing to convert"
+        continue
+    fi
+    if ! printf '%s\n' "$codecs" | grep -qv '^pcm_'; then
+        echo "$base: audio is already PCM"
+        continue
+    fi
+    if [ -e "$out" ]; then
+        echo "$base: $(basename -- "$out") already exists, skipped"
+        continue
+    fi
+
+    rate=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate \
+        -of csv=p=0 -- "$src")
+    resample=""
+    [ "${rate:-0}" -gt 48000 ] && resample="-ar 48000"
+
+    echo "$base → $(basename -- "$out")"
+    # shellcheck disable=SC2086 # $audio and $resample are word lists, on purpose
+    if ffmpeg -nostdin -hide_banner -loglevel error -stats -y -i "$src" \
+        -map 0:v? -map 0:a -map_metadata 0 \
+        -c:v copy $audio $resample -f mov -- "$part"; then
+        touch -r "$src" "$part"
+        mv -n -- "$part" "$out"
+    else
+        rm -f -- "$part"
+        echo "$base: conversion failed" >&2
+        status=1
+    fi
+done
+exit $status
