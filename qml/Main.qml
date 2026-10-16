@@ -1200,10 +1200,18 @@ Window {
     function paste() {
         if (!currentTab || !viewWritable)
             return;
-        // Only a cut is used up by its paste; copied files stay on the
-        // clipboard to be pasted again, as in Nautilus.
-        const cut = Clipboard.isCut();
-        startTransfer(Clipboard.paths(), currentTab.path, cut, cut);
+        const paths = Clipboard.paths();
+        if (paths.length > 0) {
+            // Only a cut is used up by its paste; copied files stay on the
+            // clipboard to be pasted again, as in Nautilus.
+            const cut = Clipboard.isCut();
+            startTransfer(paths, currentTab.path, cut, cut);
+            return;
+        }
+        // Raw pixels (copy image in a browser): creates a unique PNG.
+        if (Clipboard.hasImage) {
+            Clipboard.savePastedImage(currentTab.path, qsTr("image"));
+        }
     }
 
     // One flow for everything that lands files somewhere: paste and drops
@@ -1729,7 +1737,7 @@ Window {
 
         MenuItem {
             text: qsTr("Paste")
-            enabled: Clipboard.hasFiles && root.currentTab !== null && root.viewWritable
+            enabled: (Clipboard.hasFiles || Clipboard.hasImage) && root.currentTab !== null && root.viewWritable
             onTriggered: root.paste()
         }
 
@@ -1968,7 +1976,7 @@ Window {
 
         MenuItem {
             text: qsTr("Paste")
-            enabled: Clipboard.hasFiles && root.viewWritable
+            enabled: (Clipboard.hasFiles || Clipboard.hasImage) && root.viewWritable
             onTriggered: root.paste()
         }
 

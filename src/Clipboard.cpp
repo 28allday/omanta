@@ -2,7 +2,10 @@
 #include "Location.h"
 
 #include <QClipboard>
+#include <QDir>
+#include <QFileInfo>
 #include <QGuiApplication>
+#include <QImage>
 #include <QMimeData>
 #include <QUrl>
 
@@ -110,6 +113,49 @@ bool Clipboard::isCut() const
         return false;
 
     return mime->data(QLatin1String(kGnomeFormat)).startsWith("cut");
+}
+
+bool Clipboard::hasImage() const
+{
+    auto *clipboard = QGuiApplication::clipboard();
+    if (!clipboard)
+        return false;
+
+    const QMimeData *mime = clipboard->mimeData();
+    return mime && mime->hasImage() && !mime->imageData().value<QImage>().isNull();
+}
+
+QString Clipboard::savePastedImage(const QString &destinationDir, const QString &stem)
+{
+    QString cleanStem = stem.trimmed();
+    cleanStem.remove(QLatin1Char('/'));
+    if (cleanStem.isEmpty())
+        cleanStem = QStringLiteral("image");
+    QDir dir(destinationDir);
+    if (destinationDir.isEmpty() || !dir.exists())
+        return {};
+
+    auto *clipboard = QGuiApplication::clipboard();
+    if (!clipboard)
+        return {};
+    const QMimeData *mime = clipboard->mimeData();
+    if (!mime || !mime->hasImage())
+        return {};
+    const QImage image = mime->imageData().value<QImage>();
+    if (image.isNull())
+        return {};
+
+    for (int attempt = 0; attempt < 10000; ++attempt) {
+        const QString name = attempt == 0 ? cleanStem + QStringLiteral(".png")
+                                          : QStringLiteral("%1 (%2).png").arg(cleanStem).arg(attempt);
+        const QString path = dir.filePath(name);
+        if (QFileInfo::exists(path))
+            continue;
+        if (image.save(path, "PNG"))
+            return path;
+        return {};
+    }
+    return {};
 }
 
 void Clipboard::copyText(const QString &text)
