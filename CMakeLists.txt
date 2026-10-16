@@ -163,7 +163,7 @@ install(FILES LICENSE DESTINATION share/licenses/omanta)
 install(FILES packaging/omanta.desktop DESTINATION share/applications)
 install(FILES packaging/omanta.svg DESTINATION share/icons/hicolor/scalable/apps)
 install(DIRECTORY packaging/actions/ DESTINATION share/omanta/actions FILES_MATCHING PATTERN "*.toml")
-install(PROGRAMS packaging/bin/omanta-dropbox-link DESTINATION bin)
+install(PROGRAMS packaging/bin/omanta-dropbox-link packaging/bin/omanta-localsend DESTINATION bin)
 install(PROGRAMS packaging/bin/omanta-switch packaging/bin/omanta-launch
         packaging/bin/omanta-launch-cwd DESTINATION bin)
 
