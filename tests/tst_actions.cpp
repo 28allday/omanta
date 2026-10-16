@@ -31,6 +31,7 @@ private Q_SLOTS:
     void optionReachesTheCommandAsEnv();
     void malformedOptionIsDropped();
     void installedActionsListOptionsForPreferences();
+    void localSendOffersBothBackends();
 
 private:
     void writeAction(const QString &name, const QString &body);
@@ -367,6 +368,29 @@ void TestUserActions::installedActionsListOptionsForPreferences()
     QCOMPARE(listed.value("optionValues").toStringList(), QStringList({ "fast", "slow" }));
     QCOMPARE(listed.value("optionLabels").toStringList(), QStringList({ "Fast", "slow" }));
     QCOMPARE(listed.value("optionDefault").toString(), QStringLiteral("fast"));
+}
+
+void TestUserActions::localSendOffersBothBackends()
+{
+    QFile file(QFINDTESTDATA("../packaging/actions/localsend.toml"));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    writeAction("localsend.toml", QString::fromUtf8(file.readAll()));
+    const QString tool = touchExecutable("omanta-localsend");
+    UserActions actions;
+    QVariantMap localSend;
+    for (const QVariant &entry : actions.installedActions()) {
+        if (entry.toMap().value("id").toString() == QLatin1String("localsend"))
+            localSend = entry.toMap();
+    }
+    QCOMPARE(localSend.value("optionLabel").toString(), QStringLiteral("LocalSend version"));
+    QCOMPARE(localSend.value("optionValues").toStringList(), QStringList({ "desktop", "bar" }));
+    QCOMPARE(localSend.value("optionDefault").toString(), QStringLiteral("desktop"));
+    const QString env = QStandardPaths::findExecutable(QStringLiteral("env"));
+    for (const QString &backend : { QStringLiteral("desktop"), QStringLiteral("bar") }) {
+        QCOMPARE(actions.invocationsFor(QStringLiteral("localsend"), { m_text, m_folder }, backend),
+                 QList<QStringList>({ { env, QStringLiteral("OMANTA_OPTION_BACKEND=") + backend,
+                                        tool, m_text, m_folder } }));
+    }
 }
 
 QTEST_GUILESS_MAIN(TestUserActions)

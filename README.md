@@ -66,7 +66,13 @@ Omarchy theme.
   needed (Omarchy's transcode/LocalSend/Omarchy-Send menu items ship
   included, plus Dropbox share links if you use Dropbox). An action can
   declare a setting that shows up in Preferences, and any action can be
-  switched off there — see `examples/actions/` for one
+  switched off there — see `examples/actions/` for one. LocalSend offers a
+  **LocalSend version** choice: **Desktop app** (default; requires `localsend`)
+  or **Omarchy bar plugin** (requires `jq`, a running `bredda.localsend` plugin
+  with `selectPaths` IPC support, and Omarchy shell). Bar mode loads the selection
+  into its panel for choosing a destination, without launching the desktop app.
+  Older plugin versions without `selectPaths` report an error; they need the
+  matching plugin integration update.
 - Multi-window single instance, `org.freedesktop.FileManager1` — "open
   containing folder" from browsers and other apps just works
 - Its own file chooser: when omanta is the default, the Open and Save
