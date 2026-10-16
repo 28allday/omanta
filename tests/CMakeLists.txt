@@ -180,3 +180,10 @@ omanta_test(tst_mounter
 omanta_test(tst_picker
     ${CMAKE_SOURCE_DIR}/src/PickerFilter.cpp
 )
+
+omanta_test(tst_clipboardimage
+    ${CMAKE_SOURCE_DIR}/src/Clipboard.cpp
+    ${CMAKE_SOURCE_DIR}/src/Location.cpp
+)
+set_tests_properties(tst_clipboardimage PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
