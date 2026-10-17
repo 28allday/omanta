@@ -46,6 +46,8 @@ set(OMANTA_SOURCES
     src/FileChooserPortal.h
     src/IconImageProvider.cpp
     src/IconImageProvider.h
+    src/KineticScroll.cpp
+    src/KineticScroll.h
     src/Location.cpp
     src/Location.h
     src/Mounter.cpp
