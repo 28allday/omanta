@@ -93,8 +93,27 @@ FocusScope {
     readonly property int maximumZoom: zoomLevels[zoomLevels.length - 1]
     readonly property int defaultZoom: viewMode === "list" ? 18 : 64
     property bool showHidden: Settings.showHiddenFiles
-    property int sortKey: FileSortFilterModel.ByName
-    property bool sortDescending: false
+    // Start from the last sort chosen anywhere; choosing one (view-options
+    // menu or a column header) writes it back, like the view mode.
+    readonly property var sortKeys: ({
+        name: FileSortFilterModel.ByName, size: FileSortFilterModel.BySize,
+        type: FileSortFilterModel.ByType, owner: FileSortFilterModel.ByOwner,
+        group: FileSortFilterModel.ByGroup, permissions: FileSortFilterModel.ByPermissions,
+        modified: FileSortFilterModel.ByModified, created: FileSortFilterModel.ByCreated,
+        accessed: FileSortFilterModel.ByAccessed
+    })
+    property int sortKey: sortKeys[Settings.sortOrder]
+    property bool sortDescending: Settings.sortReversed
+
+    onSortKeyChanged: {
+        const order = Object.keys(sortKeys).find(id => sortKeys[id] === sortKey);
+        if (order && order !== Settings.sortOrder)
+            Settings.sortOrder = order;
+    }
+    onSortDescendingChanged: {
+        if (sortDescending !== Settings.sortReversed)
+            Settings.sortReversed = sortDescending;
+    }
 
     // Ctrl+H / menus flip showHidden; persist it like the view mode so new
     // tabs and restarts start where the user left off (Nautilus's

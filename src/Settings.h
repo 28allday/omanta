@@ -49,6 +49,11 @@ class Settings : public QObject
     // The sidebar in a wide window: F9 flips it and it sticks (Nautilus's
     // start-with-sidebar). A narrow window hides it regardless.
     Q_PROPERTY(bool showSidebar READ showSidebar WRITE setShowSidebar NOTIFY changed)
+    // The last-chosen sort, which new tabs and restarts start with —
+    // Nautilus's default-sort-order + default-sort-in-reverse-order. The
+    // order is a list-column id (see allListColumns), name by default.
+    Q_PROPERTY(QString sortOrder READ sortOrder WRITE setSortOrder NOTIFY changed)
+    Q_PROPERTY(bool sortReversed READ sortReversed WRITE setSortReversed NOTIFY changed)
 
     // List-view columns, Nautilus's two-key shape: the full order (every
     // column id, reorderable) and the visible subset. Name is always visible
@@ -93,6 +98,8 @@ public:
     QString defaultViewMode() const { return choiceFor("defaultViewMode", {"icon", "list"}); }
     bool showHiddenFiles() const { return boolFor("showHiddenFiles", false); }
     bool showSidebar() const { return boolFor("showSidebar", true); }
+    QString sortOrder() const { return choiceFor("sortOrder", allListColumns()); }
+    bool sortReversed() const { return boolFor("sortReversed", false); }
     QStringList listColumnOrder() const;
     QStringList listVisibleColumns() const;
     QStringList iconCaptions() const;
@@ -127,6 +134,8 @@ public:
     void setDefaultViewMode(const QString &value) { set("defaultViewMode", value); }
     void setShowHiddenFiles(bool value) { set("showHiddenFiles", value ? "true" : "false"); }
     void setShowSidebar(bool value) { set("showSidebar", value ? "true" : "false"); }
+    void setSortOrder(const QString &value) { set("sortOrder", value); }
+    void setSortReversed(bool value) { set("sortReversed", value ? "true" : "false"); }
     void setListColumnOrder(const QStringList &value) { set("listColumnOrder", value.join(QLatin1Char(','))); }
     void setListVisibleColumns(const QStringList &value) { set("listVisibleColumns", value.join(QLatin1Char(','))); }
     void setIconCaptions(const QStringList &value) { set("iconCaptions", value.join(QLatin1Char(','))); }

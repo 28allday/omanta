@@ -67,6 +67,8 @@ void TestSettings::defaultsAreNautilus()
     QCOMPARE(settings.defaultViewMode(), QStringLiteral("icon"));
     QCOMPARE(settings.showHiddenFiles(), false);
     QCOMPARE(settings.showSidebar(), true);
+    QCOMPARE(settings.sortOrder(), QStringLiteral("name"));
+    QCOMPARE(settings.sortReversed(), false);
     QCOMPARE(settings.hiddenActions(), QStringList());
 }
 
@@ -79,6 +81,8 @@ void TestSettings::settersPersistAcrossInstances()
         settings.setDateTimeFormat(QStringLiteral("detailed"));
         settings.setShowHiddenFiles(true);
         settings.setShowSidebar(false);
+        settings.setSortOrder(QStringLiteral("modified"));
+        settings.setSortReversed(true);
         settings.setActionOption(QStringLiteral("resolve-audio"), QStringLiteral("alac"));
         settings.setHiddenActions({ QStringLiteral("resolve-audio"), QStringLiteral("transcode") });
     }
@@ -89,6 +93,8 @@ void TestSettings::settersPersistAcrossInstances()
     QCOMPARE(reread.dateTimeFormat(), QStringLiteral("detailed"));
     QCOMPARE(reread.showHiddenFiles(), true);
     QCOMPARE(reread.showSidebar(), false);
+    QCOMPARE(reread.sortOrder(), QStringLiteral("modified"));
+    QCOMPARE(reread.sortReversed(), true);
     QCOMPARE(reread.actionOption(QStringLiteral("resolve-audio")), QStringLiteral("alac"));
     QCOMPARE(reread.actionOption(QStringLiteral("transcode")), QString());
     QCOMPARE(reread.hiddenActions(),
@@ -104,7 +110,8 @@ void TestSettings::invalidValuesFallBackToDefaults()
           "showThumbnails=sometimes\n"
           "showDirectoryItemCounts=weekly\n"
           "dateTimeFormat=cuneiform\n"
-          "showHiddenFiles=1\n");
+          "showHiddenFiles=1\n"
+          "sortOrder=colour\n");
 
     Settings settings;
     QCOMPARE(settings.sortFoldersFirst(), true);
@@ -113,6 +120,7 @@ void TestSettings::invalidValuesFallBackToDefaults()
     QCOMPARE(settings.showDirectoryItemCounts(), QStringLiteral("local-only"));
     QCOMPARE(settings.dateTimeFormat(), QStringLiteral("simple"));
     QCOMPARE(settings.showHiddenFiles(), false);
+    QCOMPARE(settings.sortOrder(), QStringLiteral("name"));
 }
 
 void TestSettings::externalEditsReloadLive()

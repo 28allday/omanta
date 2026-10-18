@@ -2,6 +2,7 @@
 #include "Clipboard.h"
 #include "DirectoryModel.h"
 #include "FileOperations.h"
+#include "FileSortFilterModel.h"
 #include "IconImageProvider.h"
 #include "Mounter.h"
 #include "Platform.h"
@@ -506,6 +507,33 @@ static void checkSidebarNarrowing(QQuickWindow *window, Settings *settings)
     QVERIFY(visible());
 }
 
+static void checkSortRemembered(QObject *window, QQuickItem *tab, Settings *settings)
+{
+    // The sort chosen in a tab (view-options menu, column headers) is saved,
+    // so a new tab and the next run start with it instead of A-Z.
+    QCOMPARE(tab->property("sortKey").toInt(), int(FileSortFilterModel::ByName));
+    QCOMPARE(tab->property("sortDescending").toBool(), false);
+    QVERIFY(QMetaObject::invokeMethod(tab, "setSort", Q_ARG(QVariant, int(FileSortFilterModel::ByModified))));
+    QVERIFY(QMetaObject::invokeMethod(tab, "setSort", Q_ARG(QVariant, int(FileSortFilterModel::ByModified))));
+    QCOMPARE(tab->property("sortDescending").toBool(), true);
+    QCOMPARE(settings->sortOrder(), QStringLiteral("modified"));
+    QCOMPARE(settings->sortReversed(), true);
+
+    const QString path = window->property("currentPath").toString();
+    QVERIFY(QMetaObject::invokeMethod(window, "addTab", Q_ARG(QVariant, path), Q_ARG(QVariant, QString())));
+    QTRY_COMPARE(window->property("tabCount").toInt(), 2);
+    QTRY_VERIFY(window->property("currentTab").value<QObject *>() != tab);
+    QCOMPARE(window->property("sortKey").toInt(), int(FileSortFilterModel::ByModified));
+    QCOMPARE(window->property("sortDescending").toBool(), true);
+    QVERIFY(QMetaObject::invokeMethod(window, "closeTab", Q_ARG(QVariant, 1)));
+    QTRY_COMPARE(window->property("tabCount").toInt(), 1);
+
+    // Back to the default so later checks see A-Z.
+    QVERIFY(QMetaObject::invokeMethod(tab, "setSort", Q_ARG(QVariant, int(FileSortFilterModel::ByName))));
+    QCOMPARE(settings->sortOrder(), QStringLiteral("name"));
+    QCOMPARE(settings->sortReversed(), false);
+}
+
 static void collectItems(QQuickItem *item, const char *property, const QVariant &value,
                          QList<QQuickItem *> &found)
 {
@@ -825,6 +853,9 @@ void TestQmlViews::selectionAndVirtualDelegates()
     settings->setShowHiddenFiles(false);
     QTRY_COMPARE(tab->property("showHidden").toBool(), false);
     checkSidebarNarrowing(qobject_cast<QQuickWindow *>(window), settings);
+    if (QTest::currentTestFailed())
+        return;
+    checkSortRemembered(window, tab, settings);
     if (QTest::currentTestFailed())
         return;
     checkDialogsCloseByMouse(qobject_cast<QQuickWindow *>(window));
