@@ -32,7 +32,9 @@ Dialog {
     readonly property int controlWidth: 190
 
     background: Rectangle {
-        color: Colors.chrome
+        // Keep Preferences readable even when the main window uses a
+        // translucent background.
+        color: Qt.alpha(Colors.chrome, 1)
         border.color: Colors.border
         border.width: 1
         radius: Colors.radius
@@ -135,7 +137,7 @@ Dialog {
         radius: Colors.radius
         // The view tone on the chrome dialog, same as the location pill —
         // chrome-on-chrome made the cards invisible.
-        color: Colors.window
+        color: Qt.alpha(Colors.window, 1)
         border.color: Colors.border
         border.width: 1
 
@@ -171,6 +173,37 @@ Dialog {
         leftPadding: 12
         spacing: 0
         implicitHeight: 32
+
+        indicator: Rectangle {
+            implicitWidth: 58
+            implicitHeight: 28
+            x: parent.width - width
+            y: (parent.height - height) / 2
+            radius: height / 2
+            color: Colors.hover
+            border.color: Colors.border
+            border.width: 1
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                x: parent.parent.checked ? 7 : 32
+                text: parent.parent.checked ? qsTr("ON") : qsTr("OFF")
+                color: Colors.textDim
+                font.pixelSize: 9
+                font.bold: true
+            }
+
+            Rectangle {
+                width: 22
+                height: 20
+                radius: 4
+                y: (parent.height - height) / 2
+                x: parent.parent.checked ? parent.width - width - 4 : 4
+                color: parent.parent.checked ? Colors.accent : Colors.textDim
+
+                Behavior on x { NumberAnimation { duration: 120 } }
+            }
+        }
     }
 
     component SectionTitle: Text {
@@ -413,7 +446,7 @@ Dialog {
                 width: parent.width
                 height: dateColumn.implicitHeight
                 radius: Colors.radius
-                color: Colors.window
+                color: Qt.alpha(Colors.window, 1)
                 border.color: Colors.border
                 border.width: 1
 
@@ -474,24 +507,44 @@ Dialog {
 
             PrefRow {
                 label: qsTr("Reorder Hold Time")
+                height: 72
 
-                Text {
-                    textFormat: Text.PlainText
-                    text: qsTr("%1 s").arg(holdSlider.value.toFixed(1))
-                    color: Colors.textDim
-                    font.pixelSize: 12
-                }
+                ColumnLayout {
+                    Layout.preferredWidth: root.controlWidth
+                    Layout.minimumWidth: root.controlWidth
+                    spacing: 0
 
-                Slider {
-                    id: holdSlider
-                    from: 0.5
-                    to: 2.0
-                    stepSize: 0.5
-                    snapMode: Slider.SnapAlways
-                    implicitWidth: root.controlWidth
-                    leftPadding: 0
-                    rightPadding: 0
-                    onMoved: Settings.bookmarkHoldSeconds = value
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("%1 seconds").arg(holdSlider.value.toFixed(1))
+                        color: Colors.text
+                        font.pixelSize: 12
+                        horizontalAlignment: Text.AlignRight
+                    }
+
+                    Slider {
+                        id: holdSlider
+                        Layout.fillWidth: true
+                        from: 0.5
+                        to: 2.0
+                        stepSize: 0.5
+                        snapMode: Slider.SnapAlways
+                        implicitHeight: 24
+                        leftPadding: 0
+                        rightPadding: 0
+                        onMoved: Settings.bookmarkHoldSeconds = value
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text { text: "0.5 s"; color: Colors.textDim; font.pixelSize: 10 }
+                        Item { Layout.fillWidth: true }
+                        Text { text: "1.0 s"; color: Colors.textDim; font.pixelSize: 10 }
+                        Item { Layout.fillWidth: true }
+                        Text { text: "1.5 s"; color: Colors.textDim; font.pixelSize: 10 }
+                        Item { Layout.fillWidth: true }
+                        Text { text: "2.0 s"; color: Colors.textDim; font.pixelSize: 10 }
+                    }
                 }
             }
 
@@ -502,23 +555,39 @@ Dialog {
 
             PrefRow {
                 label: qsTr("Background Opacity")
+                height: 72
 
-                Text {
-                    textFormat: Text.PlainText
-                    text: Math.round(opacitySlider.value * 100) + "%"
-                    color: Colors.textDim
-                    font.pixelSize: 12
-                }
+                ColumnLayout {
+                    Layout.preferredWidth: root.controlWidth
+                    Layout.minimumWidth: root.controlWidth
+                    spacing: 0
 
-                Slider {
-                    id: opacitySlider
-                    from: 0.5
-                    to: 1.0
-                    stepSize: 0.01
-                    implicitWidth: root.controlWidth
-                    leftPadding: 0
-                    rightPadding: 0
-                    onMoved: Settings.backgroundOpacity = value
+                    Text {
+                        Layout.fillWidth: true
+                        text: Math.round(opacitySlider.value * 100) + "%"
+                        color: Colors.text
+                        font.pixelSize: 12
+                        horizontalAlignment: Text.AlignRight
+                    }
+
+                    Slider {
+                        id: opacitySlider
+                        Layout.fillWidth: true
+                        from: 0.5
+                        to: 1.0
+                        stepSize: 0.01
+                        implicitHeight: 24
+                        leftPadding: 0
+                        rightPadding: 0
+                        onMoved: Settings.backgroundOpacity = value
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text { text: qsTr("More transparent"); color: Colors.textDim; font.pixelSize: 10 }
+                        Item { Layout.fillWidth: true }
+                        Text { text: qsTr("More opaque"); color: Colors.textDim; font.pixelSize: 10 }
+                    }
                 }
             }
 
