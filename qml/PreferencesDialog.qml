@@ -74,6 +74,7 @@ Dialog {
         captionSecond.currentIndex = captionIndex(captions[1]);
         captionThird.currentIndex = captionIndex(captions[2]);
         opacitySlider.value = Settings.backgroundOpacity;
+        systemIconsSwitch.checked = Settings.useSystemIcons;
         holdSlider.value = Settings.bookmarkHoldSeconds;
         // Reassigning rebuilds the rows, which read their state as they are made.
         customActions = UserActions.installedActions();
@@ -519,6 +520,14 @@ Dialog {
                     leftPadding: 0
                     rightPadding: 0
                     onMoved: Settings.backgroundOpacity = value
+                }
+            }
+
+            PrefRow {
+                label: qsTr("Use System Icon Theme")
+                PrefSwitch {
+                    id: systemIconsSwitch
+                    onToggled: Settings.useSystemIcons = checked
                 }
             }
 

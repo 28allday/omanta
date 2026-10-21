@@ -70,6 +70,7 @@ void TestSettings::defaultsAreNautilus()
     QCOMPARE(settings.sortOrder(), QStringLiteral("name"));
     QCOMPARE(settings.sortReversed(), false);
     QCOMPARE(settings.hiddenActions(), QStringList());
+    QCOMPARE(settings.useSystemIcons(), false);
 }
 
 void TestSettings::settersPersistAcrossInstances()
@@ -83,6 +84,7 @@ void TestSettings::settersPersistAcrossInstances()
         settings.setShowSidebar(false);
         settings.setSortOrder(QStringLiteral("modified"));
         settings.setSortReversed(true);
+        settings.setUseSystemIcons(true);
         settings.setActionOption(QStringLiteral("resolve-audio"), QStringLiteral("alac"));
         settings.setHiddenActions({ QStringLiteral("resolve-audio"), QStringLiteral("transcode") });
     }
@@ -95,6 +97,7 @@ void TestSettings::settersPersistAcrossInstances()
     QCOMPARE(reread.showSidebar(), false);
     QCOMPARE(reread.sortOrder(), QStringLiteral("modified"));
     QCOMPARE(reread.sortReversed(), true);
+    QCOMPARE(reread.useSystemIcons(), true);
     QCOMPARE(reread.actionOption(QStringLiteral("resolve-audio")), QStringLiteral("alac"));
     QCOMPARE(reread.actionOption(QStringLiteral("transcode")), QString());
     QCOMPARE(reread.hiddenActions(),
