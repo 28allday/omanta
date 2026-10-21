@@ -6,6 +6,7 @@
 
 #include "Application.h"
 #include "DBusAdaptors.h"
+#include "DragCardProvider.h"
 #include "FileChooserPortal.h"
 #include "IconImageProvider.h"
 #include "Platform.h"
@@ -51,6 +52,34 @@ QString toLocation(const QString &argument)
     return {};
 }
 
+// The file chooser is started by D-Bus whenever an app asks for a dialog,
+// which can be while the session is still coming up or already going down:
+// no compositor socket yet, or one that has just gone (the other portal
+// backends fail at the same moment). Qt treats a missing display as fatal and
+// aborts with a core dump. A picker with nowhere to appear simply declines.
+// The socket is found the way libwayland finds it; an X display is left for
+// Qt to try. A platform that needs no display (offscreen) is never refused.
+bool portalHasNoDisplay(int argc, char *argv[])
+{
+    bool portal = false;
+    for (int i = 1; i < argc; ++i)
+        portal = portal || qstrcmp(argv[i], "--portal") == 0;
+    if (!portal)
+        return false;
+
+    const QString platform = qEnvironmentVariable("QT_QPA_PLATFORM");
+    if (!platform.isEmpty() && !platform.startsWith(QLatin1String("wayland"))
+        && !platform.startsWith(QLatin1String("xcb")))
+        return false;
+
+    QString socket = qEnvironmentVariable("WAYLAND_DISPLAY", QStringLiteral("wayland-0"));
+    if (!socket.startsWith(QLatin1Char('/')))
+        socket = qEnvironmentVariable("XDG_RUNTIME_DIR") + QLatin1Char('/') + socket;
+    if (QFileInfo::exists(socket))
+        return false;
+    return qEnvironmentVariable("DISPLAY").isEmpty();
+}
+
 // Hands this invocation's request to the instance already running and returns
 // true if it was accepted. This is what stops a second process existing.
 bool forwardToRunningInstance(const QStringList &paths, bool newWindow, const QString &select)
@@ -83,6 +112,7 @@ int runPortal(QGuiApplication &app)
     QQmlApplicationEngine engine;
     engine.addImageProvider(QStringLiteral("fileicon"), new IconImageProvider);
     engine.addImageProvider(QStringLiteral("thumbnail"), new ThumbnailProvider);
+    engine.addImageProvider(QStringLiteral("dragcard"), new DragCardProvider);
 
     Application application(&engine);
     Platform platform;
@@ -140,12 +170,17 @@ int main(int argc, char *argv[])
     // showing through. Must be set before any QQuickWindow exists.
     QQuickWindow::setDefaultAlphaBuffer(true);
 
+    if (portalHasNoDisplay(argc, argv)) {
+        std::fputs("omanta: no display to show a file chooser on\n", stderr);
+        return 1;
+    }
+
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omanta"));
     app.setApplicationDisplayName(QStringLiteral("Files"));
     app.setOrganizationDomain(QStringLiteral("omarchy.org"));
     app.setDesktopFileName(QStringLiteral("omanta"));
-    app.setApplicationVersion(QStringLiteral("0.1.29"));
+    app.setApplicationVersion(QStringLiteral("0.1.30"));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Browse files."));
@@ -214,6 +249,7 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
     engine.addImageProvider(QStringLiteral("fileicon"), new IconImageProvider);
     engine.addImageProvider(QStringLiteral("thumbnail"), new ThumbnailProvider);
+    engine.addImageProvider(QStringLiteral("dragcard"), new DragCardProvider);
 
 
     Application application(&engine);

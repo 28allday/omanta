@@ -1,6 +1,7 @@
 #include "Application.h"
 #include "Clipboard.h"
 #include "DirectoryModel.h"
+#include "DragCardProvider.h"
 #include "FileOperations.h"
 #include "FileSortFilterModel.h"
 #include "IconImageProvider.h"
@@ -26,7 +27,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQuickItem>
-#include <QQuickItemGrabResult>
+#include <QQuickImageProvider>
 #include <QQuickWindow>
 #include <QSignalSpy>
 #include <QScopeGuard>
@@ -104,6 +105,7 @@ private Q_SLOTS:
     void copyPathPutsSelectionOnClipboard();
     void thumbnailsFollowInPlaceEdits();
     void dragPreviewSurvivesItsOwner();
+    void dragCardKeepsEveryCharacter();
     void spacePreviewsInSushi();
     void tabCloseButtonClosesTab();
     void tabTitlesFollowNavigation();
@@ -255,6 +257,26 @@ static void checkListIconSizing(QQuickWindow *window, QQuickItem *tab,
     QTRY_COMPARE(tab->property("zoom").toInt(), 64);
 }
 
+// The drag card as Drag.imageSource loads it: the id QQuickPixmap derives
+// from the URL, handed to the engine's dragcard provider.
+static QImage dragCard(QQuickWindow *window, QQuickItem *drag)
+{
+    const QUrl url = drag->property("previewUrl").toUrl();
+    if (url.scheme() != QLatin1String("image") || url.host() != QLatin1String("dragcard"))
+        return {};
+    auto *provider = static_cast<QQuickImageProvider *>(
+        qmlEngine(drag)->imageProvider(QStringLiteral("dragcard")));
+    const QString id = url.toString(QUrl::RemoveScheme | QUrl::RemoveAuthority).mid(1);
+    QSize size;
+    QImage image = provider->requestPixmap(id, &size, QSize()).toImage();
+    if (image.size() != size)
+        return {};
+    // Drawn for the window's scale, as the grab it replaced was.
+    if (!qFuzzyCompare(image.devicePixelRatio(), window->devicePixelRatio()))
+        return {};
+    return image;
+}
+
 static void checkDragPreviews(QQuickWindow *window, QQuickItem *tab,
                               const TempTree &tree, const QStringList &names,
                               const QColor &thumbnailColor = {})
@@ -290,15 +312,12 @@ static void checkDragPreviews(QQuickWindow *window, QQuickItem *tab,
             QCOMPARE(data.value("text/uri-list").toString(), platform.uriList(paths));
             QCOMPARE(paths.size(), multiple ? names.size() : 1);
 
-            auto *grab = qobject_cast<QQuickItemGrabResult *>(
-                drag->property("grabResult").value<QObject *>());
-            QVERIFY(grab);
-            const QImage image = grab->image();
+            const QImage image = dragCard(window, drag);
             QVERIFY(!image.isNull());
             const qreal scale = window->devicePixelRatio();
             QVERIFY(image.width() <= 300 * scale);
             QCOMPARE(image.height(), qRound(56 * scale));
-            // A grab must contain the card despite its transparent parent.
+            // The card itself is painted, not left transparent.
             QVERIFY(image.pixelColor(image.width() / 2, image.height() / 2).alpha() > 0);
             if (thumbnailColor.isValid())
                 QCOMPARE(image.pixelColor(qRound(28 * scale), qRound(28 * scale)), thumbnailColor);
@@ -311,8 +330,8 @@ static void checkDragPreviews(QQuickWindow *window, QQuickItem *tab,
             QVERIFY(drag->property("previewUrl").toUrl().isEmpty());
         }
 
-        // Releasing before the asynchronous grab completes must not leave a
-        // stale preview ready for the next press (or start a late drag).
+        // A press released without a drag must not leave a stale preview
+        // ready for the next press (or start a late drag).
         const QPoint point = row->mapToScene(QPointF(row->width() / 2, row->height() / 2)).toPoint();
         QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, point, pressDelay);
         QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, point);
@@ -759,6 +778,7 @@ void TestQmlViews::selectionAndVirtualDelegates()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -931,6 +951,7 @@ void TestQmlViews::emptyTrashRefreshesOpenViews()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -1045,6 +1066,7 @@ void TestQmlViews::filePickerAnswers()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -1158,6 +1180,7 @@ void TestQmlViews::pasteKeepsCopiedFilesOnClipboard()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -1248,6 +1271,7 @@ void TestQmlViews::moveAndCopyToPickedFolder()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -1324,6 +1348,7 @@ void TestQmlViews::copyPathPutsSelectionOnClipboard()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -1417,6 +1442,7 @@ void TestQmlViews::thumbnailsFollowInPlaceEdits()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -1498,14 +1524,15 @@ void TestQmlViews::thumbnailsFollowInPlaceEdits()
 void TestQmlViews::dragPreviewSurvivesItsOwner()
 {
     // Leaving a view right after pressing a file destroys the drag proxy
-    // while its deferred capture check is still queued. That check must die
-    // with the proxy instead of running against a torn-down scope.
+    // straight after prepare(). Nothing it set up may outlive it and run
+    // against a torn-down scope.
     QTest::failOnWarning(QRegularExpression("TypeError|is not a function|ReferenceError|invalid context"));
     TempTree tree;
     const QString file = tree.writeFile("pressed.txt");
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Platform platform;
     SystemTheme theme;
     qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
@@ -1533,6 +1560,52 @@ void TestQmlViews::dragPreviewSurvivesItsOwner()
         QCoreApplication::processEvents();
         QTest::qWait(5);
     }
+}
+
+// The card's URL carries the label and the picture sources as query values.
+// A name holding the query's own syntax, or a character outside ASCII, must
+// reach the painter whole: the card is as wide as the full name needs.
+void TestQmlViews::dragCardKeepsEveryCharacter()
+{
+    TempTree tree;
+    const QString name = QStringLiteral("a&label=b#c%d+e ?ü.txt");
+    const QString file = tree.writeFile(name);
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+
+    QQmlComponent component(&engine);
+    component.setData("import QtQuick\nimport Omanta\n"
+                      "Window { visible: true; width: 100; height: 100\n"
+                      "  FileDrag { objectName: 'drag'; pressed: true; dragging: false } }",
+                      QUrl());
+    QScopedPointer<QObject> window(component.create());
+    QVERIFY2(window, qPrintable(component.errorString()));
+    auto *drag = window->findChild<QQuickItem *>("drag");
+    QVERIFY(drag);
+    QVERIFY(QMetaObject::invokeMethod(drag, "prepare",
+        Q_ARG(QVariant, QStringList{file}), Q_ARG(QVariant, name),
+        Q_ARG(QVariant, QStringLiteral("image://thumbnail/0-0/%25&dpr=9")),
+        Q_ARG(QVariant, QStringLiteral("image://fileicon/text-x-generic?c=ffffff&style=content&detail=full"))));
+    const QImage image = dragCard(qobject_cast<QQuickWindow *>(window.get()), drag);
+    QVERIFY(!image.isNull());
+    QVERIFY(DragCardProvider::cardSize(name).width() > DragCardProvider::cardSize(QStringLiteral("a")).width());
+    QCOMPARE(image.width(), qRound(DragCardProvider::cardSize(name).width() * image.devicePixelRatio()));
+    // The icon was found despite the picture source's own '&': its square
+    // holds something other than the card's own fill.
+    const qreal scale = image.devicePixelRatio();
+    const QColor fill = image.pixelColor(qRound(5 * scale), qRound(28 * scale));
+    bool drawn = false;
+    for (int y = qRound(10 * scale); y < qRound(46 * scale) && !drawn; ++y) {
+        for (int x = qRound(10 * scale); x < qRound(46 * scale) && !drawn; ++x)
+            drawn = image.pixelColor(x, y) != fill;
+    }
+    QVERIFY(drawn);
 }
 
 // Space previews the selected file through the system previewer (Sushi,
@@ -1568,6 +1641,7 @@ void TestQmlViews::spacePreviewsInSushi()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -1694,6 +1768,7 @@ void TestQmlViews::tabCloseButtonClosesTab()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -1787,6 +1862,7 @@ void TestQmlViews::tabTitlesFollowNavigation()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -1852,6 +1928,7 @@ void TestQmlViews::dropHintAndSidebarBookmarkDrop()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -2049,6 +2126,7 @@ void TestQmlViews::bookmarksReorderByHolding()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
@@ -2134,6 +2212,7 @@ void TestQmlViews::pickerBookmarksDoNotReorder()
     QQmlApplicationEngine engine;
     engine.addImageProvider("fileicon", new IconImageProvider);
     engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
     Application application(&engine);
     Platform platform;
     SystemTheme theme;
