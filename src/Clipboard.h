@@ -19,6 +19,7 @@ class Clipboard : public QObject
     QML_SINGLETON
 
     Q_PROPERTY(bool hasFiles READ hasFiles NOTIFY changed)
+    Q_PROPERTY(bool hasImage READ hasImage NOTIFY changed)
     Q_PROPERTY(int count READ count NOTIFY changed)
     // Bumped whenever the clipboard changes, so a binding that calls
     // isCutPath() re-evaluates. The views dim cut files the way Nautilus
@@ -29,6 +30,7 @@ public:
     explicit Clipboard(QObject *parent = nullptr);
 
     bool hasFiles() const { return !paths().isEmpty(); }
+    bool hasImage() const;
     int count() const { return int(paths().size()); }
     int revision() const { return m_revision; }
     // Waiting on a cut? A set lookup, not a map handed to QML: every visible
@@ -44,6 +46,10 @@ public:
     Q_INVOKABLE QStringList paths() const;
     Q_INVOKABLE bool isCut() const;
     Q_INVOKABLE void clear();
+    // Raw pixels (copy image in a browser): saves a unique PNG into the
+    // destination. The stem already comes translated from QML (qsTr).
+    // Empty on failure.
+    Q_INVOKABLE QString savePastedImage(const QString &destinationDir, const QString &stem);
     // Plain text (Copy Location) — nothing to do with the file payload above.
     Q_INVOKABLE void copyText(const QString &text);
 
