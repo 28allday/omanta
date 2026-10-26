@@ -110,6 +110,13 @@ public:
     // Applications registered for this file's type, best first, each a map of
     // id/name/iconSource/isDefault. Empty for anything but a single file.
     Q_INVOKABLE QVariantList applications() const;
+    // The app launcher's applications, for when the type's own list does not
+    // contain the one the user wants. Independent of which file is open.
+    Q_INVOKABLE QVariantList allApplications() const;
+    // launchWith starts a registered handler or, failing that, any installed
+    // application — the one the user added from the full list. setDefault
+    // writes that choice for the file's type, again whether or not the app
+    // was already registered for it.
     Q_INVOKABLE bool launchWith(const QString &applicationId) const;
     Q_INVOKABLE bool setDefaultApplication(const QString &applicationId);
 

@@ -31,10 +31,69 @@ Dialog {
     // and next to its icon. Printing it twice reads like a rendering fault.
     title: qsTr("Properties")
 
+    // Apps the user picked from the full list that the type does not list
+    // yet. Cleared per file, so one file's addition does not follow the next.
+    property var extraApplications: []
+
     function show(paths) {
+        extraApplications = [];
         properties.paths = paths;
         tabs.currentIndex = 0;
         open();
+    }
+
+    function applicationModel() {
+        const registered = properties.applications();
+        const model = [];
+        const seen = {};
+        for (let i = 0; i < registered.length; ++i) {
+            model.push(registered[i]);
+            seen[registered[i].id] = true;
+        }
+        for (let i = 0; i < extraApplications.length; ++i) {
+            const app = extraApplications[i];
+            if (!seen[app.id])
+                model.push(app);
+        }
+        return model;
+    }
+
+    function selectApplication(id) {
+        const model = applicationList.model;
+        for (let i = 0; i < model.length; ++i) {
+            if (model[i].id === id) {
+                applicationList.currentIndex = i;
+                applicationList.positionViewAtIndex(i, ListView.Contain);
+                return;
+            }
+        }
+        applicationList.currentIndex = -1;
+    }
+
+    function refreshApplications(selectId) {
+        const keep = selectId !== "" ? selectId
+                   : applicationList.currentIndex >= 0
+                     ? applicationList.model[applicationList.currentIndex].id : "";
+        applicationList.model = applicationModel();
+        if (keep !== "")
+            selectApplication(keep);
+    }
+
+    function addChosenApplication(app) {
+        let known = false;
+        for (let i = 0; i < extraApplications.length; ++i) {
+            if (extraApplications[i].id === app.id)
+                known = true;
+        }
+        if (!known) {
+            extraApplications = extraApplications.concat([{
+                id: app.id,
+                name: app.name,
+                iconSource: app.iconSource,
+                isDefault: false
+            }]);
+        }
+        refreshApplications(app.id);
     }
 
     // The dialog's keyboard, wired by hand.
@@ -73,10 +132,156 @@ Dialog {
 
     // Closing must stop the tree walk. Leaving it running spends real disk on
     // an answer nobody is looking at any more.
-    onClosed: properties.paths = []
+    onClosed: {
+        allApplicationsDialog.close();
+        properties.paths = [];
+    }
 
     FileProperties {
         id: properties
+    }
+
+    // The app launcher's applications, for when the type's own list is missing
+    // the one the user actually wants. OK adds that app to the Open With
+    // list and selects it, so Set as Default and Open apply to it.
+    Dialog {
+        id: allApplicationsDialog
+
+        property var allApps: []
+
+        anchors.centerIn: Overlay.overlay
+        width: 420
+        height: 480
+        modal: true
+        title: qsTr("Other Application")
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        function openChooser() {
+            // Reparent onto the window overlay at the moment it is asked for.
+            // Created as a child of Properties, the popup would be clipped to
+            // that page; the overlay is not ready when this object is built.
+            parent = Overlay.overlay;
+            searchField.text = "";
+            allApps = properties.allApplications();
+            applyFilter();
+            open();
+            searchField.forceActiveFocus();
+        }
+
+        function applyFilter() {
+            const query = searchField.text.trim().toLowerCase();
+            const shown = query === "" ? allApps : allApps.filter(app =>
+                String(app.name).toLowerCase().indexOf(query) !== -1);
+            appChooser.model = shown;
+            appChooser.currentIndex = shown.length === 1 ? 0 : -1;
+        }
+
+        function acceptChosen() {
+            if (appChooser.currentIndex < 0)
+                return;
+            root.addChosenApplication(appChooser.model[appChooser.currentIndex]);
+            close();
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 8
+
+            TextField {
+                id: searchField
+
+                Layout.fillWidth: true
+                color: Colors.text
+                placeholderText: qsTr("Search applications")
+                selectByMouse: true
+                onTextChanged: allApplicationsDialog.applyFilter()
+                onAccepted: allApplicationsDialog.acceptChosen()
+            }
+
+            ListView {
+                id: appChooser
+
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                currentIndex: -1
+                model: []
+
+                delegate: Rectangle {
+                    required property int index
+                    required property var modelData
+
+                    width: appChooser.width
+                    height: 32
+                    radius: Colors.radius
+                    color: index === appChooser.currentIndex ? Colors.selection
+                         : chooserMouse.containsMouse ? Colors.hover : "transparent"
+
+                    Row {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8
+                        anchors.right: parent.right
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+
+                        Image {
+                            width: 20
+                            height: 20
+                            anchors.verticalCenter: parent.verticalCenter
+                            source: modelData.iconSource
+                            sourceSize: Qt.size(20, 20)
+                        }
+
+                        Text {
+                            textFormat: Text.PlainText
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 28
+                            text: modelData.name
+                            color: index === appChooser.currentIndex ? Colors.selectionText : Colors.text
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    MouseArea {
+                        id: chooserMouse
+
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: appChooser.currentIndex = index
+                        onDoubleClicked: allApplicationsDialog.acceptChosen()
+                    }
+                }
+            }
+
+            Text {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                visible: appChooser.count === 0
+                text: qsTr("No application matches.")
+                color: Colors.textDim
+                font.pixelSize: 12
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Item { Layout.fillWidth: true }
+
+                Button {
+                    text: qsTr("Cancel")
+                    onClicked: allApplicationsDialog.close()
+                }
+
+                Button {
+                    text: qsTr("OK")
+                    enabled: appChooser.currentIndex >= 0
+                    onClicked: allApplicationsDialog.acceptChosen()
+                }
+            }
+        }
     }
 
     // The open-with list is a snapshot, not a bound property — it has to be
@@ -85,7 +290,7 @@ Dialog {
         target: properties
         function onInfoChanged() {
             permissions.draft = properties.mode;
-            applicationList.model = properties.applications();
+            root.refreshApplications("");
         }
     }
 
@@ -442,7 +647,7 @@ Dialog {
                             if (properties.setDefaultApplication(chosen.id)) {
                                 // The list carries the "default" marker, so it
                                 // has to be asked again rather than patched.
-                                applicationList.model = properties.applications();
+                                root.refreshApplications(chosen.id);
                             }
                         }
                     }
@@ -452,6 +657,13 @@ Dialog {
                         enabled: applicationList.currentIndex >= 0
                         onClicked: properties.launchWith(
                                        applicationList.model[applicationList.currentIndex].id)
+                    }
+
+                    Button {
+                        text: qsTr("Other")
+                        enabled: properties.loaded && properties.itemCount === 1
+                                 && !properties.isDir
+                        onClicked: allApplicationsDialog.openChooser()
                     }
 
                     Item { Layout.fillWidth: true }

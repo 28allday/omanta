@@ -462,9 +462,29 @@ QVariantList FileProperties::applications() const
     return Applications::forType(m_contentType);
 }
 
+QVariantList FileProperties::allApplications() const
+{
+    return Applications::all();
+}
+
 bool FileProperties::launchWith(const QString &applicationId) const
 {
-    return Applications::launch(applicationId, m_contentType, m_paths);
+    if (m_paths.size() != 1 || m_isDir)
+        return false;
+
+    // Prefer the handler registered for the type. An app the user picked from
+    // the full list is not in that set, so fall through to it by desktop id.
+    GAppInfo *application = m_contentType.isEmpty()
+        ? nullptr
+        : Applications::find(applicationId, m_contentType);
+    if (!application)
+        application = Applications::findInstalled(applicationId);
+    if (!application)
+        return false;
+
+    const bool ok = Applications::launch(application, m_paths);
+    g_object_unref(application);
+    return ok;
 }
 
 bool FileProperties::setDefaultApplication(const QString &applicationId)
@@ -473,6 +493,8 @@ bool FileProperties::setDefaultApplication(const QString &applicationId)
         return false;
 
     GAppInfo *application = Applications::find(applicationId, m_contentType);
+    if (!application)
+        application = Applications::findInstalled(applicationId);
     if (!application)
         return false;
 

@@ -44,8 +44,11 @@ Omarchy theme.
   Sushi, the previewer stock Omarchy ships — zoomable images, text,
   Markdown, PDF, audio, video, and office files when LibreOffice is
   installed. Arrow keys step through the folder; Space or Escape closes it
-- Open With: right-click a file to open it in any app registered for its
-  type, or "Other Application…" to choose one and set the default
+- Open With: right-click a file, including one on a share, to open it in
+  any app registered for its type, or "Other Application…" to choose one
+  and set the default. Other lists the same applications as the app
+  launcher, so one that is not registered for the type can be added and
+  then opened or set as the default
 - Move to… and Copy to… in the right-click menu: pick a destination folder
   and the selection goes there, with the same name-clash dialog as paste
 - Copy Path in the right-click menu: the selected files' full paths as text,

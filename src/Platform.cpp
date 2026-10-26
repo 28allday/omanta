@@ -234,6 +234,15 @@ QVariantList Platform::applicationsFor(const QString &path) const
     const QString contentType = contentTypeOf(path, &isDir);
     if (isDir)
         return {};
+    return applicationsForType(contentType);
+}
+
+QVariantList Platform::applicationsForType(const QString &contentType) const
+{
+    // A folder's type is inode/directory. Offering handlers for it would put
+    // the file manager itself in Open With.
+    if (contentType.isEmpty() || contentType == QLatin1String("inode/directory"))
+        return {};
     return Applications::forType(contentType);
 }
 
@@ -242,6 +251,14 @@ bool Platform::openWith(const QString &applicationId, const QStringList &paths) 
     if (paths.isEmpty())
         return false;
     return Applications::launch(applicationId, contentTypeOf(paths.constFirst()), paths);
+}
+
+bool Platform::openWithType(const QString &applicationId, const QString &contentType,
+                            const QStringList &paths) const
+{
+    if (paths.isEmpty())
+        return false;
+    return Applications::launch(applicationId, contentType, paths);
 }
 
 namespace {

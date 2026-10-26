@@ -1792,22 +1792,24 @@ Window {
         property var actionPaths: []
         property var openWithApps: []
         property string openWithPath: ""
+        property string openWithContentType: ""
         property var templateFiles: []
         property bool newDocumentShown: false
         onAboutToShow: {
             folderBookmarked = root.currentTab
                 ? sidebar.isBookmarked(root.currentTab.path) : false;
             actionPaths = root.selection();
-            // The Open With submenu is a single local file's answer: folders
-            // open in the file manager itself, several files have no shared
-            // handler list, and a remote URI would stall the menu on a
-            // synchronous network stat.
-            if (actionPaths.length === 1 && Platform.isLocal(actionPaths[0])
-                && !Platform.isDir(actionPaths[0])) {
-                openWithPath = actionPaths[0];
-                openWithApps = Platform.applicationsFor(actionPaths[0]);
+            // One file, local or on a share. Folders open here, and several
+            // files have no shared handler list. The type comes from the row
+            // the listing already filled in, so the menu does not stat.
+            const chosen = root.currentTab ? root.currentTab.singleSelection() : null;
+            if (chosen && !chosen.isDir && chosen.path !== "") {
+                openWithPath = chosen.path;
+                openWithContentType = chosen.contentType;
+                openWithApps = Platform.applicationsForType(chosen.contentType);
             } else {
                 openWithPath = "";
+                openWithContentType = "";
                 openWithApps = [];
             }
             // Where Open in Terminal lands: one selected local folder is
@@ -1861,7 +1863,7 @@ Window {
         // Nautilus's Open With submenu: the apps registered for this file's
         // type, then the full chooser. A static submenu rather than an
         // inserted/removed one: it stays put, greyed out when the selection
-        // is not one local file.
+        // is not one file.
         Menu {
             id: openWithMenu
             title: qsTr("Open With")
@@ -1873,7 +1875,8 @@ Window {
                     required property var modelData
                     text: modelData.name
                     icon.source: modelData.iconSource
-                    onTriggered: Platform.openWith(modelData.id, [contextMenu.openWithPath])
+                    onTriggered: Platform.openWithType(modelData.id, contextMenu.openWithContentType,
+                                                        [contextMenu.openWithPath])
                 }
                 onObjectAdded: (index, object) => openWithMenu.insertItem(index, object)
                 onObjectRemoved: (index, object) => openWithMenu.removeItem(object)

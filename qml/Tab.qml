@@ -492,6 +492,26 @@ FocusScope {
         return paths;
     }
 
+    // The one selected row, with the type the listing already fetched. Open
+    // With asks this instead of stat'ing the path: a share would stall the
+    // menu on that stat, which is why a remote file used to grey the item out.
+    function singleSelection() {
+        let chosen = null;
+        for (let row = 0; row < files.count; ++row) {
+            const name = files.valueAt(row, "name");
+            if (!isSelected(name))
+                continue;
+            if (chosen)
+                return null;
+            chosen = {
+                path: actionPathAt(row),
+                isDir: !!files.valueAt(row, "isDir"),
+                contentType: files.valueAt(row, "contentType") || ""
+            };
+        }
+        return chosen;
+    }
+
     // What the batch rename dialog works from: the selected rows with the
     // fields name generation needs, in display order.
     function selectedItems() {

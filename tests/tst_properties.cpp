@@ -4,6 +4,7 @@
 
 #include <QElapsedTimer>
 #include <QFile>
+#include <QSet>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -40,6 +41,7 @@ private Q_SLOTS:
     void refusesToApplyToAMultipleSelection();
 
     void listsApplicationsForTheType();
+    void listsEveryInstalledApplication();
     void offersNoApplicationsForAFolderOrAMultipleSelection();
 
     void reportsTheFilesystem();
@@ -308,6 +310,59 @@ void TestProperties::listsApplicationsForTheType()
     // At most one of them can be the default — two would mean the list is
     // marking whatever it feels like rather than asking GIO.
     QVERIFY(defaults <= 1);
+}
+
+void TestProperties::listsEveryInstalledApplication()
+{
+    FileProperties properties;
+    const QVariantList all = properties.allApplications();
+    if (all.isEmpty())
+        QSKIP("no launchable application is installed");
+
+    QSet<QString> ids;
+    QString previous;
+    for (const QVariant &entry : all) {
+        const QVariantMap application = entry.toMap();
+        const QString id = application.value(QStringLiteral("id")).toString();
+        const QString name = application.value(QStringLiteral("name")).toString();
+        QVERIFY(!id.isEmpty());
+        QVERIFY(!id.contains(QLatin1Char('/')));
+        QVERIFY(!name.isEmpty());
+        QVERIFY(application.value(QStringLiteral("iconSource")).toString()
+                    .startsWith(QStringLiteral("image://fileicon/")));
+        QVERIFY(!application.value(QStringLiteral("isDefault")).toBool());
+        QVERIFY(!ids.contains(id));
+        ids.insert(id);
+        if (!previous.isEmpty())
+            QVERIFY(QString::localeAwareCompare(previous, name) <= 0);
+        previous = name;
+    }
+
+    // The chooser follows the app launcher, so an entry that launcher hides
+    // is not offered here either.
+    const QString root = qEnvironmentVariable("OMARCHY_PATH", QStringLiteral("/usr/share/omarchy"));
+    QFile hides(root + QStringLiteral("/default/omarchy/launcher.hides"));
+    if (hides.open(QIODevice::ReadOnly)) {
+        while (!hides.atEnd()) {
+            const QString id = QString::fromUtf8(hides.readLine()).trimmed();
+            if (id.isEmpty() || id.startsWith(QLatin1Char('#')))
+                continue;
+            QVERIFY(!ids.contains(id));
+            QVERIFY(!ids.contains(id + QStringLiteral(".desktop")));
+        }
+    }
+
+    // A made-up id is not an installed application, so it cannot be launched
+    // or made the default. This does not open anything.
+    TempTree tree;
+    const QString path = tree.writeFile(QStringLiteral("readme.txt"), 10);
+    properties.setPaths({ path });
+    QVERIFY(settle(properties));
+    QVERIFY(!properties.launchWith(QStringLiteral("omanta-no-such-app.desktop")));
+    QVERIFY(!properties.setDefaultApplication(QStringLiteral("omanta-no-such-app.desktop")));
+
+    const QVariantList registered = properties.applications();
+    QVERIFY(all.size() >= registered.size());
 }
 
 void TestProperties::offersNoApplicationsForAFolderOrAMultipleSelection()
