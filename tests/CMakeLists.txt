@@ -76,6 +76,12 @@ omanta_test(tst_theme
 # error out) but the symbols still have to link.
 target_link_libraries(tst_theme PRIVATE Qt6::DBus)
 
+omanta_test(tst_kinetic
+    ${CMAKE_SOURCE_DIR}/src/KineticScroll.cpp
+)
+set_tests_properties(tst_kinetic PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+
 omanta_test(tst_places
     ${CMAKE_SOURCE_DIR}/src/PlacesModel.cpp
     ${CMAKE_SOURCE_DIR}/src/Mounter.cpp

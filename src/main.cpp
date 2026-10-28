@@ -9,6 +9,7 @@
 #include "DragCardProvider.h"
 #include "FileChooserPortal.h"
 #include "IconImageProvider.h"
+#include "KineticScroll.h"
 #include "Platform.h"
 #include "SystemTheme.h"
 #include "ThumbnailProvider.h"
@@ -245,6 +246,10 @@ int main(int argc, char *argv[])
     // app beside it. Native rendering draws them the way the rest of the
     // desktop does.
     QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
+
+    // Touchpad scrolls glide on after the fingers lift, as in GTK apps.
+    KineticScroll kineticScroll;
+    app.installEventFilter(&kineticScroll);
 
     QQmlApplicationEngine engine;
     engine.addImageProvider(QStringLiteral("fileicon"), new IconImageProvider);
