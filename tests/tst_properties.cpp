@@ -4,6 +4,7 @@
 
 #include <QElapsedTimer>
 #include <QFile>
+#include <QSet>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -23,7 +24,33 @@ private Q_SLOTS:
     // present and log a CRITICAL when it is not, then return null. Reading one
     // wrongly therefore produces a working-looking app that spews to stderr —
     // which is invisible unless something makes it fatal. Something does now.
-    void initTestCase() { g_log_set_always_fatal(G_LOG_LEVEL_CRITICAL); }
+    //
+    // Open With writes the user's mimeapps.list (Set as Default, and the
+    // last-used record for an app picked from the full list), so GIO is
+    // pointed at a throwaway config dir and no run edits the real one. One
+    // harmless application (it runs `true`) that no type claims is added for
+    // those tests to pick. GIO caches both locations on its first lookup, so
+    // they are set here, before any test runs.
+    void initTestCase()
+    {
+        g_log_set_always_fatal(G_LOG_LEVEL_CRITICAL);
+
+        QVERIFY(m_apps.isValid());
+        QDir root(m_apps.path());
+        QVERIFY(root.mkpath(QStringLiteral("config")));
+        QVERIFY(root.mkpath(QStringLiteral("data/applications")));
+        QFile entry(root.filePath(QStringLiteral("data/applications/omanta-probe.desktop")));
+        QVERIFY(entry.open(QIODevice::WriteOnly));
+        entry.write("[Desktop Entry]\nType=Application\nName=Omanta Probe\n"
+                    "GenericName=Probe Viewer\nKeywords=omantaprobeword;\nExec=true %f\n");
+        entry.close();
+
+        qputenv("XDG_CONFIG_HOME", root.filePath(QStringLiteral("config")).toUtf8());
+        const QByteArray dataDirs = qgetenv("XDG_DATA_DIRS");
+        qputenv("XDG_DATA_DIRS", root.filePath(QStringLiteral("data")).toUtf8() + ':'
+                    + (dataDirs.isEmpty() ? QByteArrayLiteral("/usr/local/share:/usr/share")
+                                          : dataDirs));
+    }
 
     void readsASingleFile();
     void reportsTheParentAsLocation();
@@ -40,6 +67,8 @@ private Q_SLOTS:
     void refusesToApplyToAMultipleSelection();
 
     void listsApplicationsForTheType();
+    void listsEveryInstalledApplication();
+    void remembersAnApplicationPickedFromTheFullList();
     void offersNoApplicationsForAFolderOrAMultipleSelection();
 
     void reportsTheFilesystem();
@@ -57,6 +86,9 @@ private:
             QTest::qWait(10);
         return properties.loaded() && !properties.measuring();
     }
+
+    // The throwaway config + data dirs initTestCase points GIO at.
+    QTemporaryDir m_apps;
 };
 
 void TestProperties::readsASingleFile()
@@ -308,6 +340,98 @@ void TestProperties::listsApplicationsForTheType()
     // At most one of them can be the default — two would mean the list is
     // marking whatever it feels like rather than asking GIO.
     QVERIFY(defaults <= 1);
+}
+
+void TestProperties::listsEveryInstalledApplication()
+{
+    FileProperties properties;
+    const QVariantList all = properties.allApplications();
+    if (all.isEmpty())
+        QSKIP("no launchable application is installed");
+
+    QSet<QString> ids;
+    QString previous;
+    for (const QVariant &entry : all) {
+        const QVariantMap application = entry.toMap();
+        const QString id = application.value(QStringLiteral("id")).toString();
+        const QString name = application.value(QStringLiteral("name")).toString();
+        QVERIFY(!id.isEmpty());
+        QVERIFY(!id.contains(QLatin1Char('/')));
+        QVERIFY(!name.isEmpty());
+        QVERIFY(application.value(QStringLiteral("iconSource")).toString()
+                    .startsWith(QStringLiteral("image://fileicon/")));
+        QVERIFY(!application.value(QStringLiteral("isDefault")).toBool());
+        QVERIFY(!ids.contains(id));
+        ids.insert(id);
+        if (!previous.isEmpty())
+            QVERIFY(QString::localeAwareCompare(previous, name) <= 0);
+        previous = name;
+    }
+
+    // The chooser follows the app launcher, so an entry that launcher hides
+    // is not offered here either.
+    const QString root = qEnvironmentVariable("OMARCHY_PATH", QStringLiteral("/usr/share/omarchy"));
+    QFile hides(root + QStringLiteral("/default/omarchy/launcher.hides"));
+    if (hides.open(QIODevice::ReadOnly)) {
+        while (!hides.atEnd()) {
+            const QString id = QString::fromUtf8(hides.readLine()).trimmed();
+            if (id.isEmpty() || id.startsWith(QLatin1Char('#')))
+                continue;
+            QVERIFY(!ids.contains(id));
+            QVERIFY(!ids.contains(id + QStringLiteral(".desktop")));
+        }
+    }
+
+    // A made-up id is not an installed application, so it cannot be launched
+    // or made the default. This does not open anything.
+    TempTree tree;
+    const QString path = tree.writeFile(QStringLiteral("readme.txt"), 10);
+    properties.setPaths({ path });
+    QVERIFY(settle(properties));
+    QVERIFY(!properties.launchWith(QStringLiteral("omanta-no-such-app.desktop")));
+    QVERIFY(!properties.setDefaultApplication(QStringLiteral("omanta-no-such-app.desktop")));
+
+    const QVariantList registered = properties.applications();
+    QVERIFY(all.size() >= registered.size());
+}
+
+void TestProperties::remembersAnApplicationPickedFromTheFullList()
+{
+    const QString probe = QStringLiteral("omanta-probe.desktop");
+    TempTree tree;
+    const QString path = tree.writeFile(QStringLiteral("readme.txt"), 10);
+    FileProperties properties;
+    properties.setPaths({ path });
+    QVERIFY(settle(properties));
+
+    const auto registeredIds = [&properties] {
+        QStringList ids;
+        for (const QVariant &entry : properties.applications())
+            ids.append(entry.toMap().value(QStringLiteral("id")).toString());
+        return ids;
+    };
+    QVERIFY(!registeredIds().contains(probe));
+
+    // The full list offers it, with the words the chooser's search matches:
+    // generic name, keywords and program, not just the name.
+    QString search;
+    for (const QVariant &entry : properties.allApplications()) {
+        const QVariantMap application = entry.toMap();
+        if (application.value(QStringLiteral("id")).toString() == probe)
+            search = application.value(QStringLiteral("search")).toString();
+    }
+    QVERIFY(search.contains(QStringLiteral("Probe Viewer")));
+    QVERIFY(search.contains(QStringLiteral("omantaprobeword")));
+    QVERIFY(search.contains(QStringLiteral("true")));
+
+    // Opening the file with it records it for the type, so the next list has
+    // it without Set as Default — and the record lands in the throwaway
+    // config, never the user's.
+    QVERIFY(properties.launchWith(probe));
+    QVERIFY(registeredIds().contains(probe));
+    QFile mimeapps(QDir(m_apps.path()).filePath(QStringLiteral("config/mimeapps.list")));
+    QVERIFY(mimeapps.open(QIODevice::ReadOnly));
+    QVERIFY(mimeapps.readAll().contains(probe.toUtf8()));
 }
 
 void TestProperties::offersNoApplicationsForAFolderOrAMultipleSelection()

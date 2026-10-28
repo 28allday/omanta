@@ -17,6 +17,7 @@ private Q_SLOTS:
     void listsApplicationsForAFile();
     void offersNothingForAFolder();
     void refusesAnIdNotRegisteredForTheType();
+    void answersFromAKnownTypeWithoutStatting();
 };
 
 void TestOpenWith::listsApplicationsForAFile()
@@ -51,6 +52,28 @@ void TestOpenWith::offersNothingForAFolder()
     // "Open With" on a folder would offer to hand it to a text editor.
     QVERIFY(platform.applicationsFor(folder).isEmpty());
     QVERIFY(platform.applicationsFor(QString()).isEmpty());
+}
+
+void TestOpenWith::answersFromAKnownTypeWithoutStatting()
+{
+    Platform platform;
+    // A folder type must not grow an Open With list if a caller passes it
+    // through. The menu uses this entry point with the type the listing
+    // already stored, including for a file on a share.
+    QVERIFY(platform.applicationsForType(QString()).isEmpty());
+    QVERIFY(platform.applicationsForType(QStringLiteral("inode/directory")).isEmpty());
+    QVERIFY(!platform.openWithType(QStringLiteral("omanta-no-such-app.desktop"),
+                                    QStringLiteral("text/plain"), {}));
+    QVERIFY(!platform.openWithType(QStringLiteral("omanta-no-such-app.desktop"),
+                                    QString(), { QStringLiteral("/tmp") }));
+
+    TempTree tree;
+    const QString path = tree.writeFile(QStringLiteral("readme.txt"), 10);
+    const QVariantList fromPath = platform.applicationsFor(path);
+    const QVariantList fromType = platform.applicationsForType(QStringLiteral("text/plain"));
+    QCOMPARE(fromType.size(), fromPath.size());
+    QVERIFY(!platform.openWithType(QStringLiteral("omanta-no-such-app.desktop"),
+                                    QStringLiteral("text/plain"), { path }));
 }
 
 void TestOpenWith::refusesAnIdNotRegisteredForTheType()

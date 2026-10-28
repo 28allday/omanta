@@ -462,9 +462,42 @@ QVariantList FileProperties::applications() const
     return Applications::forType(m_contentType);
 }
 
+QVariantList FileProperties::allApplications() const
+{
+    return Applications::all();
+}
+
 bool FileProperties::launchWith(const QString &applicationId) const
 {
-    return Applications::launch(applicationId, m_contentType, m_paths);
+    if (m_paths.size() != 1 || m_isDir)
+        return false;
+
+    // Prefer the handler registered for the type. An app the user picked from
+    // the full list is not in that set, so fall through to it by desktop id.
+    GAppInfo *application = m_contentType.isEmpty()
+        ? nullptr
+        : Applications::find(applicationId, m_contentType);
+    const bool registered = application != nullptr;
+    if (!application)
+        application = Applications::findInstalled(applicationId);
+    if (!application)
+        return false;
+
+    const bool ok = Applications::launch(application, m_paths);
+    // An app picked from the full list is not one the type offers yet. Record
+    // it as last used for the type, as GIO's own choosers do, so it is still
+    // in the list the next time — not only after Set as Default.
+    if (ok && !registered && !m_contentType.isEmpty()) {
+        GError *error = nullptr;
+        if (!g_app_info_set_as_last_used_for_type(application,
+                                                  m_contentType.toUtf8().constData(), &error)) {
+            qWarning("omanta: could not remember %s for %s: %s", qUtf8Printable(applicationId),
+                     qUtf8Printable(m_contentType), error ? error->message : "unknown");
+        }
+        g_clear_error(&error);
+    }
+    g_object_unref(application);
+    return ok;
 }
 
 bool FileProperties::setDefaultApplication(const QString &applicationId)
@@ -473,6 +506,8 @@ bool FileProperties::setDefaultApplication(const QString &applicationId)
         return false;
 
     GAppInfo *application = Applications::find(applicationId, m_contentType);
+    if (!application)
+        application = Applications::findInstalled(applicationId);
     if (!application)
         return false;
 

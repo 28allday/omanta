@@ -44,8 +44,11 @@ Omarchy theme.
   Sushi, the previewer stock Omarchy ships — zoomable images, text,
   Markdown, PDF, audio, video, and office files when LibreOffice is
   installed. Arrow keys step through the folder; Space or Escape closes it
-- Open With: right-click a file to open it in any app registered for its
-  type, or "Other Application…" to choose one and set the default
+- Open With: right-click a file, including one on a share, to open it in
+  any app registered for its type, or "Other Application…" to choose one
+  and set the default. Other lists the same applications as the app
+  launcher, so one that is not registered for the type can be added and
+  then opened or set as the default
 - Move to… and Copy to… in the right-click menu: pick a destination folder
   and the selection goes there, with the same name-clash dialog as paste
 - Copy Path in the right-click menu: the selected files' full paths as text,
@@ -83,8 +86,8 @@ Grab the package from the [latest release](https://github.com/28allday/omanta/re
 and install it:
 
 ```bash
-curl -LO https://github.com/28allday/omanta/releases/download/v0.1.31/omanta-0.1.31-1-x86_64.pkg.tar.zst
-sudo pacman -U omanta-0.1.31-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/28allday/omanta/releases/download/v0.1.32/omanta-0.1.32-1-x86_64.pkg.tar.zst
+sudo pacman -U omanta-0.1.32-1-x86_64.pkg.tar.zst
 ```
 
 (The package is unsigned, so pacman won't install it straight from a URL —

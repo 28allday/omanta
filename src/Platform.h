@@ -94,9 +94,19 @@ public:
     // question asynchronously for its dialog.
     Q_INVOKABLE QVariantList applicationsFor(const QString &path) const;
 
+    // The same list as applicationsFor(), from a content type the caller
+    // already has. The menu uses the type the listing stored, so opening it
+    // on a share does not stat the network again.
+    Q_INVOKABLE QVariantList applicationsForType(const QString &contentType) const;
+
     // Launches `paths` with the given desktop-file id. The id must be one of
     // the entries applicationsFor() returned for the type.
     Q_INVOKABLE bool openWith(const QString &applicationId, const QStringList &paths) const;
+
+    // Launches `paths` with an id taken from applicationsForType(contentType).
+    // The type is the one the listing already reported, so this does not stat.
+    Q_INVOKABLE bool openWithType(const QString &applicationId, const QString &contentType,
+                                  const QStringList &paths) const;
 
     // Opens the user's terminal in `directory`. Resolves through $TERMINAL and
     // the xdg-terminal-exec convention rather than naming a terminal, so this
