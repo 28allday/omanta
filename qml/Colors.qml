@@ -48,7 +48,11 @@ QtObject {
 
     // File-view folders have a front panel and optional location emblem;
     // navigation/chrome continue to use the compact monochrome symbols.
+    // With the system-icons preference, no colour is passed, so the provider
+    // returns the icon theme's own artwork for the file's GIO icon names.
     function fileIcon(iconSource, color, iconSize) {
+        if (Settings.useSystemIcons)
+            return iconSource;
         // The provider receives physical pixels. Choose detail from the
         // logical size so a 16px icon stays simple on a high-DPI screen too.
         return tint(iconSource, color) + "&style=content&detail="

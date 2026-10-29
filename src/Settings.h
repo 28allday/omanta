@@ -69,6 +69,10 @@ class Settings : public QObject
     // the way a terminal's background_opacity works — backdrop translucent,
     // text and controls opaque. 1 = solid, floor 0.5 keeps content readable.
     Q_PROPERTY(qreal backgroundOpacity READ backgroundOpacity WRITE setBackgroundOpacity NOTIFY changed)
+    // Not a Nautilus row: draw files and folders with the system icon theme
+    // (the GTK theme Qt reports) instead of the flat theme-coloured glyphs.
+    // Navigation and toolbar symbols stay glyphs either way.
+    Q_PROPERTY(bool useSystemIcons READ useSystemIcons WRITE setUseSystemIcons NOTIFY changed)
     // Icon sizes, one per view, shared by every window and remembered:
     // Nautilus keeps its zoom levels as global settings too.
     Q_PROPERTY(int iconZoom READ iconZoom WRITE setIconZoom NOTIFY changed)
@@ -104,6 +108,7 @@ public:
     QStringList listVisibleColumns() const;
     QStringList iconCaptions() const;
     qreal backgroundOpacity() const { return realFor("backgroundOpacity", 1.0, 0.5, 1.0); }
+    bool useSystemIcons() const { return boolFor("useSystemIcons", false); }
     bool toggleMenuOffered() const { return boolFor("toggleMenuOffered", false); }
     int iconZoom() const { return qRound(realFor("iconZoom", 64, 32, 128)); }
     int listZoom() const { return qRound(realFor("listZoom", 18, 16, 64)); }
@@ -140,6 +145,7 @@ public:
     void setListVisibleColumns(const QStringList &value) { set("listVisibleColumns", value.join(QLatin1Char(','))); }
     void setIconCaptions(const QStringList &value) { set("iconCaptions", value.join(QLatin1Char(','))); }
     void setBackgroundOpacity(qreal value) { set("backgroundOpacity", QString::number(value, 'f', 2)); }
+    void setUseSystemIcons(bool value) { set("useSystemIcons", value ? "true" : "false"); }
     void setToggleMenuOffered(bool value) { set("toggleMenuOffered", value ? "true" : "false"); }
     void setIconZoom(int value) { set("iconZoom", QString::number(value)); }
     void setListZoom(int value) { set("listZoom", QString::number(value)); }
