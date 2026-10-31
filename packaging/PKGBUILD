@@ -20,7 +20,9 @@ license=('MIT')
 install="$pkgname.install"
 depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'glib2' 'gvfs' 'hicolor-icon-theme'
          'libarchive' 'tinysparql')
-optdepends=('gvfs-smb: browse smb:// shares'
+optdepends=('localsend: LocalSend desktop sharing'
+            'jq: LocalSend sharing through the Omarchy bar plugin'
+            'gvfs-smb: browse smb:// shares'
             'gvfs-mtp: phones over MTP'
             'gvfs-gphoto2: cameras'
             'ffmpegthumbnailer: video thumbnails'

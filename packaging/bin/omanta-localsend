@@ -1,0 +1,35 @@
+#!/bin/sh
+# Route selections without starting a second receiver in bar mode.
+set -eu
+
+fail() {
+    printf 'omanta-localsend: %s\n' "$1" >&2
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send "LocalSend sharing failed" "$1" || :
+    fi
+    exit 1
+}
+
+[ "$#" -gt 0 ] || fail "No files selected"
+for path do
+    case "$path" in
+        /*) ;;
+        *) fail "Expected an absolute path: $path" ;;
+    esac
+    [ -r "$path" ] || fail "Cannot read selected path: $path"
+done
+
+case "${OMANTA_OPTION_BACKEND:-desktop}" in
+    desktop)
+        command -v localsend >/dev/null 2>&1 || fail "Install the LocalSend desktop app, or choose the Omarchy bar plugin in Preferences."
+        exec localsend "$@"
+        ;;
+    bar)
+        command -v omarchy-shell >/dev/null 2>&1 || fail "Omarchy shell is not installed"
+        command -v jq >/dev/null 2>&1 || fail "Install jq to share through the Omarchy bar plugin"
+        payload=$(jq -cn --args '{paths: $ARGS.positional}' -- "$@")
+        result=$(omarchy-shell bredda.localsend selectPaths "$payload" 2>&1) || fail "$result"
+        [ "$result" = "ok" ] || fail "$result"
+        ;;
+    *) fail "Unknown LocalSend version: $OMANTA_OPTION_BACKEND" ;;
+esac

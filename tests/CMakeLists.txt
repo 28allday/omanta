@@ -180,3 +180,6 @@ omanta_test(tst_mounter
 omanta_test(tst_picker
     ${CMAKE_SOURCE_DIR}/src/PickerFilter.cpp
 )
+
+add_test(NAME tst_localsend_helper COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tst_localsend_helper.sh
+    ${CMAKE_SOURCE_DIR}/packaging/bin/omanta-localsend)
