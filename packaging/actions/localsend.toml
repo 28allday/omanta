@@ -1,8 +1,10 @@
-# Open LocalSend with the selection loaded for sending; the device is picked
-# in its window (the app has no headless send). Hidden when the native
-# localsend binary is absent (the old extension's flatpak fallback is not
-# carried over — install the package).
+# Choose the frontend in Preferences; the helper checks its dependencies.
+# Desktop mode opens LocalSend with the selection loaded; the device is
+# picked in its window (the app has no headless send).
 name = "Send via LocalSend"
 plural = "Send selected via LocalSend"
-command = "localsend %F"
-requires = ["localsend"]
+command = "omanta-localsend %F"
+requires = ["omanta-localsend"]
+option = "backend"
+option_label = "LocalSend version"
+option_choices = ["desktop=Desktop app", "bar=Omarchy bar plugin"]
