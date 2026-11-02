@@ -1,0 +1,9 @@
+# Right-click a JPEG or PNG and make it the current Omarchy background.
+# Hidden unless omarchy-theme-bg-set is installed. The command takes one
+# image, so a multi-selection uses the first eligible file.
+name = "Set as Desktop Background"
+command = "omarchy-theme-bg-set %f"
+requires = ["omarchy-theme-bg-set"]
+mimetypes = ["image/jpeg", "image/png"]
+extensions = [".jpg", ".jpeg", ".png"]
+directories = false
