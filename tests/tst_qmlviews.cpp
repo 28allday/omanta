@@ -107,6 +107,7 @@ private Q_SLOTS:
     void dragPreviewSurvivesItsOwner();
     void dragCardKeepsEveryCharacter();
     void spacePreviewsInSushi();
+    void typeAheadStartsFreshInAnOpenedFolder();
     void tabCloseButtonClosesTab();
     void tabTitlesFollowNavigation();
     void dropHintAndSidebarBookmarkDrop();
@@ -1752,6 +1753,74 @@ static QList<QQuickItem *> tabDelegates(QQuickItem *item)
 static QPoint centreOf(QQuickItem *item)
 {
     return item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+}
+
+// GitHub #47: type a folder's name, Enter, and straight on with the name of a
+// folder inside it — no pause. The letters typed in the parent must not carry
+// over into the opened folder, where "codefun" matches nothing.
+void TestQmlViews::typeAheadStartsFreshInAnOpenedFolder()
+{
+    QTest::failOnWarning(QRegularExpression("Required property|Cannot assign.*undefined|TypeError"));
+    TempTree tree;
+    QTemporaryDir config;
+    for (const char *env : {"OMANTA_SETTINGS_FILE", "OMANTA_STARRED_FILE",
+                           "OMANTA_SERVERS_FILE", "OMANTA_BOOKMARKS_FILE"})
+        qputenv(env, config.filePath(env).toUtf8());
+    qputenv("OMANTA_COLORS_FILE", config.filePath("missing/parent/colors.toml").toUtf8());
+    tree.writeFile("alpha.txt");
+    QVERIFY(QDir().mkpath(tree.filePath("code/apple")));
+    QVERIFY(QDir().mkpath(tree.filePath("code/fun/deep")));
+    QVERIFY(QDir().mkpath(tree.filePath("code/zebra")));
+
+    QQmlApplicationEngine engine;
+    engine.addImageProvider("fileicon", new IconImageProvider);
+    engine.addImageProvider("thumbnail", new ThumbnailProvider);
+    engine.addImageProvider("dragcard", new DragCardProvider);
+    Application application(&engine);
+    Platform platform;
+    SystemTheme theme;
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "App", &application);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Platform", &platform);
+    qmlRegisterSingletonInstance("Omanta.Runtime", 1, 0, "Theme", &theme);
+    application.openWindow(tree.path());
+    QQuickWindow *window = nullptr;
+    for (QObject *child : application.children()) {
+        if (child->property("currentTab").isValid()) {
+            window = qobject_cast<QQuickWindow *>(child);
+            break;
+        }
+    }
+    QVERIFY(window);
+    auto *tab = qobject_cast<QQuickItem *>(window->property("currentTab").value<QObject *>());
+    QVERIFY(tab);
+    QTRY_COMPARE(window->property("visibleCount").toInt(), 2);
+    window->requestActivate();
+    tab->forceActiveFocus();
+    QTRY_VERIFY(tab->hasActiveFocus());
+
+    for (const char c : {'c', 'o', 'd', 'e'})
+        QTest::keyClick(window, c);
+    QCOMPARE(window->property("currentName").toString(), QStringLiteral("code"));
+    QTest::keyClick(window, Qt::Key_Return);
+    QCOMPARE(tab->property("path").toString(), tree.filePath("code"));
+    QTRY_COMPARE(window->property("visibleCount").toInt(), 3);
+    QVERIFY(tab->hasActiveFocus());
+
+    // Well inside the type-ahead pause: the parent's letters are still fresh.
+    for (const char c : {'f', 'u', 'n'})
+        QTest::keyClick(window, c);
+    QCOMPARE(window->property("currentName").toString(), QStringLiteral("fun"));
+    QTest::keyClick(window, Qt::Key_Return);
+    QCOMPARE(tab->property("path").toString(), tree.filePath("code/fun"));
+    QTRY_COMPARE(window->property("visibleCount").toInt(), 1);
+
+    // The same rule holds for any way of changing folder: Back, here.
+    QTest::keyClick(window, 'd');
+    QCOMPARE(window->property("currentName").toString(), QStringLiteral("deep"));
+    QVERIFY(QMetaObject::invokeMethod(tab, "goBack"));
+    QTRY_COMPARE(window->property("visibleCount").toInt(), 3);
+    QTest::keyClick(window, 'z');
+    QCOMPARE(window->property("currentName").toString(), QStringLiteral("zebra"));
 }
 
 void TestQmlViews::tabCloseButtonClosesTab()

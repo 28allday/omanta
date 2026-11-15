@@ -243,6 +243,11 @@ FocusScope {
         clearSelection();
         currentIndex = -1;
         searchQuery = ""; // navigating away is leaving the search
+        // GitHub #47: letters typed in the folder being left are not the
+        // start of a name in this one. Without this, "code", Enter, "fun"
+        // typed without a pause looked for "codefun" and found nothing.
+        typeAhead.prefix = "";
+        resetTimer.stop();
         if (history.current !== path)
             history.visit(path);
     }
